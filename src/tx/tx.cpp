@@ -66,11 +66,32 @@ bool CBaseTx::IsValidHeight(int32_t nCurrHeight, int32_t nTxCacheHeight) const {
     if (BLOCK_REWARD_TX == nTxType || UCOIN_BLOCK_REWARD_TX == nTxType || PRICE_MEDIAN_TX == nTxType)
         return true;
 
-    if (nValidHeight > nCurrHeight + nTxCacheHeight / 2)
+    if (valid_height > nCurrHeight + nTxCacheHeight / 2)
         return false;
 
-    if (nValidHeight < nCurrHeight - nTxCacheHeight / 2)
+    if (valid_height < nCurrHeight - nTxCacheHeight / 2)
         return false;
+
+    return true;
+}
+
+bool CBaseTx::GenerateRegID(CAccount &account, CCacheWrapper &cw, CValidationState &state, const int32_t height,
+                            const int32_t index) {
+    if (txUid.type() == typeid(CPubKey)) {
+        account.owner_pubkey = txUid.get<CPubKey>();
+
+        CRegID regId;
+        if (cw.accountCache.GetRegId(txUid, regId)) {
+            // account has regid already, return
+            return true;
+        }
+
+        // generate a new regid for the account
+        account.regid = CRegID(height, index);
+        if (!cw.accountCache.SaveAccount(account))
+            return state.DoS(100, ERRORMSG("CBaseTx::GenerateRegID, save account info error"), WRITE_ACCOUNT_FAIL,
+                             "bad-write-accountdb");
+    }
 
     return true;
 }
@@ -109,7 +130,7 @@ Object CBaseTx::ToJson(const CAccountDBCache &accountCache) const {
     result.push_back(Pair("from_addr",      srcKeyId.ToAddress()));
     result.push_back(Pair("fee_symbol",     fee_symbol));
     result.push_back(Pair("fees",           llFees));
-    result.push_back(Pair("valid_height",   nValidHeight));
+    result.push_back(Pair("valid_height",   valid_height));
     result.push_back(Pair("signature",      HexStr(signature)));
     return result;
 }
@@ -129,10 +150,10 @@ bool CBaseTx::CheckSignatureSize(const vector<unsigned char> &signature) const {
 }
 
 string CBaseTx::ToString(CAccountDBCache &accountCache) {
-    string str = strprintf("txType=%s, hash=%s, ver=%d, pubkey=%s, llFees=%ld, keyid=%s, nValidHeight=%d\n",
+    string str = strprintf("txType=%s, hash=%s, ver=%d, pubkey=%s, llFees=%ld, keyid=%s, valid_height=%d\n",
                             GetTxType(nTxType), GetHash().ToString(), nVersion,
                             txUid.get<CPubKey>().ToString(),
-                            llFees, txUid.get<CPubKey>().GetKeyId().ToAddress(), nValidHeight);
+                            llFees, txUid.get<CPubKey>().GetKeyId().ToAddress(), valid_height);
 
     return str;
 }
@@ -152,7 +173,7 @@ bool CBaseTx::AddInvolvedKeyIds(vector<CUserID> uids, CCacheWrapper &cw, set<CKe
     return true;
 }
 
-bool CBaseTx::CheckCoinRange(TokenSymbol symbol, int64_t amount) {
+bool CBaseTx::CheckCoinRange(const TokenSymbol &symbol, const int64_t amount) const {
     if (symbol == SYMB::WICC) {
         return CheckBaseCoinRange(amount);
     } else if (symbol == SYMB::WGRT) {

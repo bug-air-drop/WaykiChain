@@ -7,13 +7,16 @@
 #ifndef ENTITIES_CONTRACT_H
 #define ENTITIES_CONTRACT_H
 
-#include "id.h"
+#include "commons/serialize.h"
+#include "config/version.h"
 
 #include <string>
 
+using namespace std;
+
 /**
  *  lua contract - for blockchain tx serialization/deserialization purpose
- *      - This is a backward compability implmentation,
+ *      - This is a backward compability implentation,
  *      - Only universal contract tx will be allowed after the software fork height
  */
 class CLuaContract {
@@ -26,9 +29,7 @@ public:
     CLuaContract(const string codeIn, const string memoIn): code(codeIn), memo(memoIn) { };
 
 public:
-    inline uint32_t GetContractSize() const {
-        return GetContractSize(SER_DISK, CLIENT_VERSION);
-    }
+    inline uint32_t GetContractSize() const { return GetContractSize(SER_DISK, CLIENT_VERSION); }
 
     inline uint32_t GetContractSize(int32_t nType, int32_t nVersion) const {
         uint32_t sz = ::GetSerializeSize(code, nType, nVersion);
@@ -57,7 +58,6 @@ public:
         }
     }
 
-public:
     bool IsValid();
 };
 
@@ -97,6 +97,9 @@ public:
                        const string &abiIn)
         : vm_type(vmTypeIn), upgradable(upgradableIn), code(codeIn), memo(memoIn), abi(abiIn) {}
 
+public:
+    inline uint32_t GetContractSize() const { return GetSerializeSize(SER_DISK, CLIENT_VERSION); }
+
     bool IsEmpty() const { return vm_type == VMType::NULL_VM && code.empty() && memo.empty() && abi.empty(); }
 
     void SetEmpty() {
@@ -113,6 +116,8 @@ public:
         READWRITE(memo);
         READWRITE(abi);
     )
+
+    bool IsValid();
 };
 
 #endif  // ENTITIES_CONTRACT_H

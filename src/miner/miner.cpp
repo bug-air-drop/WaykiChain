@@ -80,24 +80,24 @@ uint32_t GetElementForBurn(CBlockIndex *pIndex) {
 // Sort transactions by priority and fee to decide priority orders to process transactions.
 void GetPriorityTx(vector<TxPriority> &vecPriority, const int32_t nFuelRate) {
     vecPriority.reserve(mempool.memPoolTxs.size());
-    static double dPriority  = 0;
-    static double dFeePerKb  = 0;
-    static uint32_t nTxSize  = 0;
+    static double dPriority     = 0;
+    static double dFeePerKb     = 0;
+    static uint32_t nTxSize     = 0;
     static TokenSymbol coinType = SYMB::WUSD;
-    static uint64_t nFees    = 0;
+    static uint64_t nFees       = 0;
 
     uint64_t slideWindowBlockCount;
     pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindowBlockCount);
     int32_t height            = chainActive.Height();
     uint64_t bcoinMedianPrice = pCdMan->pPpCache->GetBcoinMedianPrice(height, slideWindowBlockCount);
     uint64_t fcoinMedianPrice = pCdMan->pPpCache->GetFcoinMedianPrice(height, slideWindowBlockCount);
-    auto GetCoinMedianPrice   = [&](const TokenSymbol coinType) -> uint64_t {
+    auto GetCoinMedianPrice   = [&](const TokenSymbol &coinType) -> uint64_t {
         if (coinType == SYMB::WICC)
             return bcoinMedianPrice;
         else if (coinType == SYMB::WGRT)
             return fcoinMedianPrice;
         else if (coinType == SYMB::WUSD)
-            return 1;
+            return 10000; // boosted by 10^4
         else
             return 0;
     };
@@ -151,17 +151,17 @@ bool CreateBlockRewardTx(const int64_t currentTime, const CAccount &delegate, CA
     if (pBlock->vptx[0]->nTxType == BLOCK_REWARD_TX) {
         auto pRewardTx          = (CBlockRewardTx *)pBlock->vptx[0].get();
         pRewardTx->txUid        = delegate.regid;
-        pRewardTx->nValidHeight = pBlock->GetHeight();
+        pRewardTx->valid_height = pBlock->GetHeight();
 
     } else if (pBlock->vptx[0]->nTxType == UCOIN_BLOCK_REWARD_TX) {
         auto pRewardTx          = (CUCoinBlockRewardTx *)pBlock->vptx[0].get();
         pRewardTx->txUid        = delegate.regid;
-        pRewardTx->nValidHeight = pBlock->GetHeight();
+        pRewardTx->valid_height = pBlock->GetHeight();
         pRewardTx->profits      = delegate.ComputeBlockInflateInterest(pBlock->GetHeight());
 
         auto pPriceMedianTx          = (CBlockPriceMedianTx *)pBlock->vptx[1].get();
         pPriceMedianTx->txUid        = delegate.regid;
-        pPriceMedianTx->nValidHeight = pBlock->GetHeight();
+        pPriceMedianTx->valid_height = pBlock->GetHeight();
     }
 
     pBlock->SetNonce(GetRand(SysCfg().GetBlockMaxNonce()));
@@ -410,7 +410,7 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
 
             pBlock->vptx.push_back(std::get<2>(item));
 
-            LogPrint("fuel", "miner total fuel:%d, tx fuel:%d runStep:%d fuelRate:%d txid:%s\n", totalFuel,
+            LogPrint("fuel", "miner total fuel:%d, tx fuel:%d, runStep:%d, fuelRate:%d, txid:%s\n", totalFuel,
                      pBaseTx->GetFuel(fuelRate), pBaseTx->nRunStep, fuelRate, pBaseTx->GetHash().GetHex());
         }
 
@@ -430,7 +430,7 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
         pBlock->SetFuelRate(fuelRate);
         UpdateTime(*pBlock, pIndexPrev);
 
-        LogPrint("INFO", "CreateNewBlockPreStableCoinRelease() : height=%d, tx=%d, totalBlockSize=%lu\n", height, index + 1,
+        LogPrint("INFO", "CreateNewBlockPreStableCoinRelease() : height=%d, tx=%d, totalBlockSize=%llu\n", height, index + 1,
                  totalBlockSize);
     }
 
@@ -591,7 +591,7 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
 
             pBlock->vptx.push_back(std::get<2>(item));
 
-            LogPrint("fuel", "miner total fuel:%d, tx fuel:%d runStep:%d fuelRate:%d txid:%s\n", totalFuel,
+            LogPrint("fuel", "miner total fuel:%d, tx fuel:%d, runStep:%d, fuelRate:%d, txid:%s\n", totalFuel,
                      pBaseTx->GetFuel(fuelRate), pBaseTx->nRunStep, fuelRate, pBaseTx->GetHash().GetHex());
 
         }
@@ -619,7 +619,7 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
         pBlock->SetFuelRate(fuelRate);
         UpdateTime(*pBlock, pIndexPrev);
 
-        LogPrint("INFO", "CreateNewBlockStableCoinRelease() : height=%d, tx=%d, totalBlockSize=%lu\n", height, index + 1,
+        LogPrint("INFO", "CreateNewBlockStableCoinRelease() : height=%d, tx=%d, totalBlockSize=%llu\n", height, index + 1,
                  totalBlockSize);
     }
 
@@ -699,7 +699,7 @@ bool static MineBlock(CBlock *pBlock, CWallet *pWallet, CBlockIndex *pIndexPrev,
         int64_t lastTime;
         {
             LOCK2(cs_main, pWalletMain->cs_wallet);
-            if (uint32_t(chainActive.Tip()->height + 1) != pBlock->GetHeight())
+            if (uint32_t(chainActive.Height() + 1) != pBlock->GetHeight())
                 return false;
 
             CKey acctKey;
@@ -782,7 +782,7 @@ void static CoinMiner(CWallet *pWallet, int32_t targetHeight) {
             if (SysCfg().NetworkID() != REGTEST_NET) {
                 // Busy-wait for the network to come online so we don't waste time mining
                 // on an obsolete chain. In regtest mode we expect to fly solo.
-                while (vNodes.empty() || (chainActive.Tip() && chainActive.Tip()->height > 1 &&
+                while (vNodes.empty() || (chainActive.Tip() && chainActive.Height() > 1 &&
                                           GetAdjustedTime() - chainActive.Tip()->nTime > 60 * 60 &&
                                           !SysCfg().GetBoolArg("-genblockforce", false))) {
                     MilliSleep(1000);

@@ -50,7 +50,7 @@ Value vmexecutescript(const Array& params, bool fHelp) {
         throw runtime_error(
             "vmexecutescript \"addr\" \"script_path\" [\"arguments\"] [amount] [symbol:fee:unit]\n"
             "\nexecutes the script in vm simulator, and then returns the executing status.\n"
-            "\nthe execution include deploycontracttx and callcontracttx.\n"
+            "\nthe execution include submitcontractdeploytx and submitcontractcalltx.\n"
             "\nArguments:\n"
             "1.\"addr\": (string required) contract owner address from this wallet\n"
             "2.\"script_path\": (string required), the file path of the app script\n"
@@ -170,7 +170,7 @@ Value vmexecutescript(const Array& params, bool fHelp) {
 
     Object DeployContractTxObj;
     EnsureWalletIsUnlocked();
-    int newHeight = chainActive.Tip()->height + 1;
+    int newHeight = chainActive.Height() + 1;
     assert(pWalletMain != nullptr);
     {
         size_t contract_size = contract.GetContractSize();
@@ -179,7 +179,7 @@ Value vmexecutescript(const Array& params, bool fHelp) {
         tx.contract         = contract;
         tx.llFees           = regMinFee;
         tx.nRunStep         = contract_size;
-        tx.nValidHeight     = newHeight;
+        tx.valid_height     = newHeight;
 
         if (!pWalletMain->Sign(srcKeyId, tx.ComputeSignatureHash(), tx.signature)) {
             throw JSONRPCError(RPC_WALLET_ERROR, "Sign failed");
@@ -210,10 +210,10 @@ Value vmexecutescript(const Array& params, bool fHelp) {
         contractInvokeTx.nTxType      = LCONTRACT_INVOKE_TX;
         contractInvokeTx.txUid        = srcRegId;
         contractInvokeTx.app_uid      = appId;
-        contractInvokeTx.bcoins       = amount;
+        contractInvokeTx.coin_amount  = amount;
         contractInvokeTx.llFees       = totalFee - regMinFee;
         contractInvokeTx.arguments    = string(arguments.begin(), arguments.end());
-        contractInvokeTx.nValidHeight = newHeight;
+        contractInvokeTx.valid_height = newHeight;
 
         vector<unsigned char> signature;
         if (!pWalletMain->Sign(srcKeyId, contractInvokeTx.ComputeSignatureHash(), contractInvokeTx.signature)) {
@@ -221,7 +221,7 @@ Value vmexecutescript(const Array& params, bool fHelp) {
         }
 
         CValidationState state;
-        if (!contractInvokeTx.ExecuteTx(chainActive.Tip()->height + 1, 2, *spCW, state)) {
+        if (!contractInvokeTx.ExecuteTx(chainActive.Height() + 1, 2, *spCW, state)) {
             throw JSONRPCError(RPC_TRANSACTION_ERROR, "Executetx  contract failed");
         }
     }

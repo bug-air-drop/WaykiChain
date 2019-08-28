@@ -43,9 +43,9 @@ string CMulsigTx::ToString(CAccountDBCache &accountCache) {
     }
     string str = strprintf(
         "txType=%s, hash=%s, ver=%d, required=%d, %s, desId=%s, bcoins=%ld, llFees=%ld, "
-        "memo=%s,  nValidHeight=%d\n",
+        "memo=%s,  valid_height=%d\n",
         GetTxType(nTxType), GetHash().ToString(), nVersion, required, signatures, desId,
-        bcoins, llFees, HexStr(memo), nValidHeight);
+        bcoins, llFees, HexStr(memo), valid_height);
 
     return str;
 }
@@ -90,7 +90,7 @@ Object CMulsigTx::ToJson(const CAccountDBCache &accountView) const {
     result.push_back(Pair("money",          bcoins));
     result.push_back(Pair("fees",           llFees));
     result.push_back(Pair("memo",           HexStr(memo)));
-    result.push_back(Pair("valid_height",   nValidHeight));
+    result.push_back(Pair("valid_height",   valid_height));
 
     return result;
 }
@@ -98,74 +98,61 @@ Object CMulsigTx::ToJson(const CAccountDBCache &accountView) const {
 bool CMulsigTx::GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds) {
     CKeyID keyId;
     for (const auto &item : signaturePairs) {
-        if (!cw.accountCache.GetKeyId(CUserID(item.regid), keyId)) return false;
+        if (!cw.accountCache.GetKeyId(CUserID(item.regid), keyId))
+            return false;
         keyIds.insert(keyId);
     }
-
-    CKeyID desKeyId;
-    if (!cw.accountCache.GetKeyId(desUserId, desKeyId)) return false;
-    keyIds.insert(desKeyId);
 
     return true;
 }
 
-bool CMulsigTx::ExecuteTx(int height, int index, CCacheWrapper &cw, CValidationState &state) {
-    CAccount srcAcct;
-    CAccount desAcct;
-    bool generateRegID = false;
+bool CMulsigTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state) {
+    CAccount srcAccount;
+    CAccount desAccount;
 
-    if (!cw.accountCache.GetAccount(CUserID(keyId), srcAcct)) {
+    if (!cw.accountCache.GetAccount(CUserID(keyId), srcAccount)) {
         return state.DoS(100, ERRORMSG("CMulsigTx::ExecuteTx, read source addr account info error"),
                          READ_ACCOUNT_FAIL, "bad-read-accountdb");
-    } else {
-        CRegID regId;
-        // If the source account does NOT have CRegID, need to generate a new CRegID.
-        if (!cw.accountCache.GetRegId(CUserID(keyId), regId)) {
-            srcAcct.regid = CRegID(height, index);
-            generateRegID = true;
-        }
+    }
+
+    if (!GenerateRegID(srcAccount, cw, state, height, index)) {
+        return false;
     }
 
     uint64_t minusValue = llFees + bcoins;
-    if (!srcAcct.OperateBalance(SYMB::WICC, SUB_FREE, minusValue)) {
+    if (!srcAccount.OperateBalance(SYMB::WICC, SUB_FREE, minusValue)) {
         return state.DoS(100, ERRORMSG("CMulsigTx::ExecuteTx, account has insufficient funds"),
                          UPDATE_ACCOUNT_FAIL, "operate-minus-account-failed");
     }
 
-    if (generateRegID) {
-        if (!cw.accountCache.SaveAccount(srcAcct))
-            return state.DoS(100, ERRORMSG("CMulsigTx::ExecuteTx, save account info error"),
-                             WRITE_ACCOUNT_FAIL, "bad-write-accountdb");
-    } else {
-        if (!cw.accountCache.SetAccount(CUserID(srcAcct.keyid), srcAcct))
-            return state.DoS(100, ERRORMSG("CMulsigTx::ExecuteTx, save account info error"),
-                             WRITE_ACCOUNT_FAIL, "bad-write-accountdb");
-    }
+    if (!cw.accountCache.SetAccount(CUserID(srcAccount.keyid), srcAccount))
+        return state.DoS(100, ERRORMSG("CMulsigTx::ExecuteTx, save account info error"), WRITE_ACCOUNT_FAIL,
+                         "bad-write-accountdb");
 
     uint64_t addValue = bcoins;
-    if (!cw.accountCache.GetAccount(desUserId, desAcct)) {
-        if (desUserId.type() == typeid(CKeyID)) {  // target account does NOT have CRegID
-            desAcct.keyid    = desUserId.get<CKeyID>();
+    if (!cw.accountCache.GetAccount(desUserId, desAccount)) {
+        if (desUserId.type() == typeid(CKeyID)) {  // first involved in transaction
+            desAccount.keyid = desUserId.get<CKeyID>();
         } else {
             return state.DoS(100, ERRORMSG("CMulsigTx::ExecuteTx, get account info failed"),
                              READ_ACCOUNT_FAIL, "bad-read-accountdb");
         }
     }
 
-    if (!desAcct.OperateBalance(SYMB::WICC, ADD_FREE, addValue)) {
+    if (!desAccount.OperateBalance(SYMB::WICC, ADD_FREE, addValue)) {
         return state.DoS(100, ERRORMSG("CMulsigTx::ExecuteTx, operate accounts error"),
                          UPDATE_ACCOUNT_FAIL, "operate-add-account-failed");
     }
 
-    if (!cw.accountCache.SetAccount(desUserId, desAcct))
+    if (!cw.accountCache.SetAccount(desUserId, desAccount))
         return state.DoS(100, ERRORMSG("CMulsigTx::ExecuteTx, save account error, kyeId=%s",
-                         desAcct.keyid.ToString()), UPDATE_ACCOUNT_FAIL, "bad-save-account");
+                         desAccount.keyid.ToString()), UPDATE_ACCOUNT_FAIL, "bad-save-account");
 
     return true;
 }
 
-bool CMulsigTx::CheckTx(int height, CCacheWrapper &cw, CValidationState &state) {
-    IMPLEMENT_CHECK_TX_FEE(fee_symbol);
+bool CMulsigTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
+    IMPLEMENT_CHECK_TX_FEE;
     IMPLEMENT_CHECK_TX_MEMO;
 
     if (required < 1 || required > signaturePairs.size()) {
@@ -230,6 +217,23 @@ bool CMulsigTx::CheckTx(int height, CCacheWrapper &cw, CValidationState &state) 
     if (!cw.accountCache.GetAccount(CUserID(keyId), srcAccount))
         return state.DoS(100, ERRORMSG("CMulsigTx::CheckTx, read multisig account: %s failed", keyId.ToAddress()),
                          READ_ACCOUNT_FAIL, "bad-read-accountdb");
+
+    return true;
+}
+
+bool CMulsigTx::GenerateRegID(CAccount &account, CCacheWrapper &cw, CValidationState &state, const int32_t height,
+                              const int32_t index) {
+    CRegID regId;
+    if (cw.accountCache.GetRegId(CUserID(keyId), regId)) {
+        // account has regid already, return
+        return true;
+    }
+
+    // generate a new regid for the account
+    account.regid = CRegID(height, index);
+    if (!cw.accountCache.SaveAccount(account))
+        return state.DoS(100, ERRORMSG("CMulsigTx::GenerateRegID, save account info error"), WRITE_ACCOUNT_FAIL,
+                         "bad-write-accountdb");
 
     return true;
 }

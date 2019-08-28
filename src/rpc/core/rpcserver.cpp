@@ -208,8 +208,6 @@ Value stop(const Array& params, bool fHelp) {
 //
 // Call Table
 //
-extern Value gettxoperationlog(const Array& params, bool fHelp);
-extern Value dropminerkeys(const Array& params, bool fHelp);
 
 static const CRPCCommand vRPCCommands[] =
 { //  name                      actor (function)         okSafeMode threadSafe reqWallet
@@ -229,15 +227,12 @@ static const CRPCCommand vRPCCommands[] =
     { "getnettotals",           &getnettotals,           true,      true,       false },
     { "getpeerinfo",            &getpeerinfo,            true,      false,      false },
     { "ping",                   &ping,                   true,      false,      false },
-    { "getchainstate",          &getchainstate,          false,     false,      false }, //true
+    { "getchainstate",          &getchainstate,          false,     false,      false },
 
     /* Block chain and UTXO */
     { "getblockchaininfo",      &getblockchaininfo,      true,      false,      false },
-    { "getbestblockhash",       &getbestblockhash,       true,      false,      false },
     { "getblockcount",          &getblockcount,          true,      true,       false },
     { "getblock",               &getblock,               false,     false,      false },
-    { "getblockhash",           &getblockhash,           false,     false,      false },
-    { "getdifficulty",          &getdifficulty,          true,      false,      false },
     { "getrawmempool",          &getrawmempool,          true,      false,      false },
     { "verifychain",            &verifychain,            true,      false,      false },
 
@@ -252,11 +247,6 @@ static const CRPCCommand vRPCCommands[] =
     { "getminedblocks",         &getminedblocks,         true,      true,       false },
 
     /* Raw transactions */
-    { "gensendtoaddressraw",    &gensendtoaddressraw,    false,     false,     false },
-    { "genregisteraccountraw",  &genregisteraccountraw,  false,     false,     false },
-    { "genregistercontractraw", &genregistercontractraw, false,     false,     false },
-    { "gencallcontractraw",     &gencallcontractraw,     false,     false,     false },
-    { "genvotedelegateraw",     &genvotedelegateraw,     false,     false,     false },
     { "genmulsigtx",            &genmulsigtx,            false,     false,     false },
 
     /* uses wallet if enabled */
@@ -272,19 +262,11 @@ static const CRPCCommand vRPCCommands[] =
     { "getwalletinfo",          &getwalletinfo,          true,      false,      true },
     { "importprivkey",          &importprivkey,          false,     false,      true },
     { "dropminerkeys",          &dropminerkeys,          false,     false,      true },
+    { "dropprivkey",            &dropprivkey,            false,     false,      true },
 
     { "importwallet",           &importwallet,           false,     false,      true },
     { "listaddr",               &listaddr,               true,      false,      true },
-    { "listtransactions",       &listtransactions,       true,      false,      true },
-    { "listtransactionsv2",     &listtransactionsv2,     true,      false,      true },
     { "listtx",                 &listtx,                 true,      false,      true },
-    { "listcontracttx",         &listcontracttx,         true,      false,      true },
-    { "gettransaction",         &gettransaction,         true,      false,      true },
-
-    { "registeraccounttx",      &registeraccounttx,      true,      false,      true },
-    { "deploycontracttx",     &deploycontracttx,     true,      false,      true },
-    { "callcontracttx",         &callcontracttx,         true,      false,      true },
-    { "votedelegatetx",         &votedelegatetx,         true,      false,      true },
 
     { "settxfee",               &settxfee,               false,     false,      true },
     { "walletlock",             &walletlock,             true,      false,      true },
@@ -298,30 +280,32 @@ static const CRPCCommand vRPCCommands[] =
     { "getcontractdata",        &getcontractdata,        true,      false,      true },
     { "signmessage",            &signmessage,            false,     false,      true },
     { "verifymessage",          &verifymessage,          false,     false,      false },
-    { "sendtoaddress",          &sendtoaddress,          false,     false,      true },
-    { "sendtoaddresswithmemo",  &sendtoaddresswithmemo,  false,     false,      true },
-    { "sendtoaddresswithfee",   &sendtoaddresswithfee,   false,     false,      true },
-    { "send",                   &send,                   false,     false,      true },
     { "getcoinunitinfo",        &getcoinunitinfo,        false,     false,      false},
     { "getbalance",             &getbalance,             false,     false,      true },
-    { "getassets",              &getassets,              false,     false,      true },
+    { "getcontractassets",      &getcontractassets,      false,     false,      true },
     { "listcontractassets",     &listcontractassets,     false,     false,      true },
     { "sendtxraw",              &sendtxraw,              true,      false,      false},
 
     { "signtxraw",              &signtxraw,              true,      false,      true },
     { "getcontractaccountinfo", &getcontractaccountinfo, true,      false,      true },
-    { "gettxreceipt",           &gettxreceipt,           true,      false,      true },
     { "getsignature",           &getsignature,           true,      false,      true },
     { "listdelegates",          &listdelegates,          true,      false,      true },
     { "decodetxraw",            &decodetxraw,            false,     false,      false},
     { "decodemulsigscript",     &decodemulsigscript,     false,     false,      false },
 
+    /* basic tx */
+    { "submitsendtx",           &submitsendtx,           false,     false,      true },
+    { "submitaccountregistertx",&submitaccountregistertx,false,     false,      true },
+    { "submitcontractdeploytx", &submitcontractdeploytx, false,     false,      true },
+    { "submitcontractcalltx",   &submitcontractcalltx,   false,     false,      true },
+    { "submitdelegatevotetx",   &submitdelegatevotetx,   false,     false,      true },
+
     /* for CDP */
     { "submitpricefeedtx",      &submitpricefeedtx,      true,      false,      true },
-    { "submitstakefcointx",     &submitstakefcointx,     true,      false,      true },
-    { "submitstakecdptx",       &submitstakecdptx,       true,      false,      true },
-    { "submitredeemcdptx",      &submitredeemcdptx,      true,      false,      true },
-    { "submitliquidatecdptx",   &submitliquidatecdptx,   true,      false,      true },
+    { "submitfcoinstaketx",     &submitfcoinstaketx,     true,      false,      true },
+    { "submitcdpstaketx",       &submitcdpstaketx,       true,      false,      true },
+    { "submitcdpredeemtx",      &submitcdpredeemtx,      true,      false,      true },
+    { "submitcdpliquidatetx",   &submitcdpliquidatetx,   true,      false,      true },
 
     { "getscoininfo",           &getscoininfo,          false,     false,      false },
     { "getcdp",                 &getcdp,                false,     false,      false },
@@ -341,9 +325,9 @@ static const CRPCCommand vRPCCommands[] =
     /* for asset */
     { "submitassetissuetx",         &submitassetissuetx,         true,     false,      false },
     { "submitassetupdatetx",        &submitassetupdatetx,        true,     false,      false },
+    { "getassets",                  &getassets,                  true,     false,      false },
 
     /* for test code */
-    { "gettxoperationlog",      &gettxoperationlog,      false,     false,      false},
     { "disconnectblock",        &disconnectblock,        true,      false,      true },
     { "reloadtxcache",          &reloadtxcache,          true,      false,      true },
     { "getcontractregid",       &getcontractregid,       true,      false,      false},
@@ -504,12 +488,14 @@ void JSONRequest::parse(const Value& valRequest) {
 
     // Parse method
     Value valMethod = find_value(request, "method");
-    if (valMethod.type() == null_type) throw JSONRPCError(RPC_INVALID_REQUEST, "Missing method");
+    if (valMethod.type() == null_type)
+        throw JSONRPCError(RPC_INVALID_REQUEST, "Missing method");
+
     if (valMethod.type() != str_type)
         throw JSONRPCError(RPC_INVALID_REQUEST, "Method must be a string");
+
     strMethod = valMethod.get_str();
-    if (strMethod != "getwork" && strMethod != "getblocktemplate")
-        LogPrint("rpc", "ThreadRPCServer method=%s\n", strMethod);
+    LogPrint("rpc", "ThreadRPCServer method=%s\n", strMethod);
 
     // Parse params
     Value valParams = find_value(request, "params");

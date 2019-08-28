@@ -10,7 +10,7 @@
 #include "main.h"
 
 bool CFcoinStakeTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
-    IMPLEMENT_CHECK_TX_FEE(fee_symbol);
+    IMPLEMENT_CHECK_TX_FEE;
     IMPLEMENT_CHECK_TX_REGID(txUid.type());
 
     if (stakeType != BalanceOpType::STAKE && stakeType != BalanceOpType::UNSTAKE) {
@@ -65,9 +65,9 @@ bool CFcoinStakeTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, 
 
 string CFcoinStakeTx::ToString(CAccountDBCache &accountCache) {
     return strprintf(
-        "txType=%s, hash=%s, ver=%d, txUid=%s, stakeType=%s, fcoinsToStake=%lu, llFees=%ld, nValidHeight=%d\n",
+        "txType=%s, hash=%s, ver=%d, txUid=%s, stakeType=%s, fcoinsToStake=%lu, llFees=%ld, valid_height=%d\n",
         GetTxType(nTxType), GetHash().ToString(), nVersion, txUid.ToString(), GetBalanceOpTypeName(stakeType),
-        fcoinsToStake, llFees, nValidHeight);
+        fcoinsToStake, llFees, valid_height);
 }
 
 Object CFcoinStakeTx::ToJson(const CAccountDBCache &accountCache) const {
@@ -77,13 +77,4 @@ Object CFcoinStakeTx::ToJson(const CAccountDBCache &accountCache) const {
     result.push_back(Pair("coin_amount",    fcoinsToStake));
 
     return result;
-}
-
-bool CFcoinStakeTx::GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds) {
-    CKeyID keyId;
-    if (!cw.accountCache.GetKeyId(txUid, keyId)) {
-        return false;
-    }
-    keyIds.insert(keyId);
-    return true;
 }

@@ -41,22 +41,8 @@ Object CDelegateVoteTx::ToJson(const CAccountDBCache &accountCache) const {
     return result;
 }
 
-// FIXME: not useful
-bool CDelegateVoteTx::GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds) {
-    // CKeyID keyId;
-    // if (!cw.accountCache.GetKeyId(userId, keyId))
-    //     return false;
-
-    // vAddr.insert(keyId);
-    // for (auto iter = operVoteFunds.begin(); iter != operVoteFunds.end(); ++iter) {
-    //     vAddr.insert(iter->fund.GetCandidateUid());
-    // }
-    return true;
-}
-
-
 bool CDelegateVoteTx::CheckTx(int height, CCacheWrapper &cw, CValidationState &state) {
-    IMPLEMENT_CHECK_TX_FEE(SYMB::WICC);
+    IMPLEMENT_CHECK_TX_FEE;
     IMPLEMENT_CHECK_TX_REGID(txUid.type());
 
     if (height == (int32_t)SysCfg().GetFeatureForkHeight()) {
@@ -144,7 +130,8 @@ bool CDelegateVoteTx::ExecuteTx(int height, int index, CCacheWrapper &cw, CValid
     CRegID &regId = txUid.get<CRegID>();
     cw.delegateCache.GetCandidateVotes(regId, candidateVotesInOut);
 
-    if (!account.ProcessDelegateVotes(candidateVotes, candidateVotesInOut, height, &cw.accountCache)) {
+    vector<CReceipt> receipts;
+    if (!account.ProcessDelegateVotes(candidateVotes, candidateVotesInOut, height, cw.accountCache, receipts)) {
         return state.DoS(100, ERRORMSG("CDelegateVoteTx::ExecuteTx, operate delegate vote failed, regId=%s",
                         txUid.ToString()), UPDATE_ACCOUNT_FAIL, "operate-delegate-failed");
     }
@@ -187,6 +174,8 @@ bool CDelegateVoteTx::ExecuteTx(int height, int index, CCacheWrapper &cw, CValid
                             account.regid.ToString()), UPDATE_ACCOUNT_FAIL, "bad-save-accountdb");
         }
     }
+
+    cw.txReceiptCache.SetTxReceipts(GetHash(), receipts);
 
     return true;
 }

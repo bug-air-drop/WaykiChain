@@ -112,9 +112,9 @@ public:
 class CAsset {
 public:
     TokenSymbol symbol;     // asset symbol, E.g WICC | WUSD
-    CUserID owner_uid;   // creator or owner user id of the asset
+    CUserID owner_uid;      // creator or owner user id of the asset
     TokenName name;         // asset long name, E.g WaykiChain coin
-    uint64_t total_supply;  // boosted by 1e8 for the decimal part, max is 90 billion.
+    uint64_t total_supply;  // boosted by 10^8 for the decimal part, max is 90 billion.
     bool mintable;          // whether this token can be minted in the future.
 public:
     CAsset(): total_supply(0), mintable(false) {}
@@ -138,6 +138,43 @@ public:
         name.clear();
         mintable = false;
         total_supply = 0;
+    }
+
+public:
+    static bool CheckSymbolChar(const char ch) {
+        return  (ch >= '0' && ch <= '9') ||
+                (ch >= 'A' && ch <= 'Z') ||
+                (ch >= 'a' && ch <= 'z') ||
+                ch == '@' ||
+                ch == '#' ||
+                ch == '.' ||
+                ch == '_' ||
+                ch == '-' ||
+                ch == '/';
+    }
+
+    // @return nullptr if succeed, else err string
+    static shared_ptr<string> CheckSymbol(const TokenSymbol &symbol) {
+        size_t symbolSize = symbol.size();
+        if (symbolSize < MIN_ASSET_SYMBOL_LEN || symbolSize > MAX_TOKEN_SYMBOL_LEN)
+            return make_shared<string>(strprintf("length=%d must be in range[%d, %d]",
+                symbolSize, MIN_ASSET_SYMBOL_LEN, MAX_TOKEN_SYMBOL_LEN));
+
+        for (auto ch : symbol) {
+            if (!CheckSymbolChar(ch))
+                return make_shared<string>("there is invalid char in symbol");
+        }
+        return nullptr;
+    }
+
+    Object ToJson() const {
+        Object result;
+        result.push_back(Pair("asset_symbol",   symbol));
+        result.push_back(Pair("owner_uid",      owner_uid.ToString()));
+        result.push_back(Pair("asset_name",     name));
+        result.push_back(Pair("total_supply",   total_supply));
+        result.push_back(Pair("mintable",       mintable));
+        return result;
     }
 };
 

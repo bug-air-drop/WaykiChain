@@ -25,14 +25,12 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
         READWRITE(minerUid);
         READWRITE(VARINT(llFees));
         READWRITE(signature);)
-
-    map<TokenSymbol, uint64_t> GetValues() const { return {{SYMB::WICC, 0}}; }
 
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
@@ -40,7 +38,7 @@ public:
                    (minerUid.type() == typeid(CPubKey) || minerUid.type() == typeid(CNullID)));
 
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(nValidHeight) << txUid << minerUid << VARINT(llFees);
+            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(valid_height) << txUid << minerUid << VARINT(llFees);
 
             sigHash = ss.GetHash();
         }
@@ -51,7 +49,6 @@ public:
     virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CAccountRegisterTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache);
     virtual Object ToJson(const CAccountDBCache &accountCache) const;
-    virtual bool GetInvolvedKeyIds(CCacheWrapper& cw, set<CKeyID> &keyIds);
 
     virtual bool CheckTx(int32_t height, CCacheWrapper& cw, CValidationState &state);
     virtual bool ExecuteTx(int32_t height, int32_t index, CCacheWrapper& cw, CValidationState &state);

@@ -71,6 +71,7 @@ static const uint64_t CENT = 1000000;    //10^6 = 0.01 WICC
 static const uint32_t MAX_TOKEN_SYMBOL_LEN = 12;
 /** the max asset name len */
 static const uint32_t MAX_ASSET_NAME_LEN = 12;
+static const uint32_t MIN_ASSET_SYMBOL_LEN = 7;
 static const uint64_t MAX_ASSET_TOTAL_SUPPLY = 9000000000 * COIN; // 90 billion
 
 /** the total blocks of burn fee need */
@@ -126,7 +127,9 @@ static const uint32_t MAX_COMMON_TX_MEMO_SIZE    = 100;        // 100 bytes max 
 static const uint32_t MAX_CONTRACT_MEMO_SIZE     = 100;        // 100 bytes max for memo size
 static const int32_t MAX_MULSIG_NUMBER           = 15;         // m-n multisig, refer to n
 static const int32_t MAX_MULSIG_SCRIPT_SIZE      = 1000;       // multisig script max size
+
 static const string LUA_CONTRACT_LOCATION_PREFIX = "/tmp/lua/";  // prefix of lua contract file location
+static const string LUA_CONTRACT_HEADLINE        = "mylib = require";
 
 static const uint64_t INITIAL_BASE_COIN_AMOUNT               = 210000000;  // 210 million
 static const uint32_t BLOCK_INTERVAL_PRE_STABLE_COIN_RELEASE = 10;         // 10 seconds

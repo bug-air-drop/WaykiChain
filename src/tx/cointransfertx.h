@@ -12,37 +12,22 @@
 class CBaseCoinTransferTx : public CBaseTx {
 public:
     mutable CUserID toUid;  // Recipient Regid or Keyid
-    uint64_t bcoins;        // transfer amount
+    uint64_t coin_amount;   // coin amount (coin symbol: WICC)
     string memo;
 
 public:
-    CBaseCoinTransferTx(): CBaseTx(BCOIN_TRANSFER_TX) { }
-
-    CBaseCoinTransferTx(const CUserID &txUidIn, const CUserID toUidIn, const int32_t validHeightIn,
-                        const uint64_t bcoinsIn, const uint64_t feesIn, const string &memoIn)
-        : CBaseTx(BCOIN_TRANSFER_TX, txUidIn, validHeightIn, feesIn),
-          toUid(toUidIn),
-          bcoins(bcoinsIn),
-          memo(memoIn) {
-        if (txUidIn.type() == typeid(CRegID))
-            assert(!txUidIn.get<CRegID>().IsEmpty());
-        else if (txUidIn.type() == typeid(CPubKey))
-            assert(txUidIn.get<CPubKey>().IsFullyValid());
-
-        if (toUidIn.type() == typeid(CRegID)) assert(!toUidIn.get<CRegID>().IsEmpty());
-    }
-
+    CBaseCoinTransferTx() : CBaseTx(BCOIN_TRANSFER_TX) {}
     ~CBaseCoinTransferTx() {}
 
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
         READWRITE(toUid);
         READWRITE(VARINT(llFees));
-        READWRITE(VARINT(bcoins));
+        READWRITE(VARINT(coin_amount));
         READWRITE(memo);
         READWRITE(signature);
     )
@@ -50,19 +35,17 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(nValidHeight) << txUid << toUid
-               << VARINT(llFees) << VARINT(bcoins) << memo;
+            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(valid_height) << txUid << toUid
+               << VARINT(llFees) << VARINT(coin_amount) << memo;
             sigHash = ss.GetHash();
         }
 
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return {{SYMB::WICC, bcoins}}; }
     virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CBaseCoinTransferTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache);
     virtual Object ToJson(const CAccountDBCache &accountCache) const;
-    virtual bool GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds);
 
     virtual bool CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state);
     virtual bool ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state);
@@ -98,7 +81,7 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
         READWRITE(toUid);
         READWRITE(coin_symbol);
@@ -112,7 +95,7 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(nValidHeight) << txUid << toUid << coin_symbol
+            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(valid_height) << txUid << toUid << coin_symbol
                << VARINT(coin_amount) << fee_symbol << VARINT(llFees) << memo;
 
             sigHash = ss.GetHash();
@@ -121,11 +104,9 @@ public:
         return sigHash;
     }
 
-    map<TokenSymbol, uint64_t> GetValues() const { return {{coin_symbol, coin_amount}}; }
     virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CCoinTransferTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache);
     virtual Object ToJson(const CAccountDBCache &accountCache) const;
-    bool GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds);
 
     bool CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state);
     bool ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state);

@@ -15,7 +15,7 @@
 #include "config/version.h"
 
 bool CPriceFeedTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
-    IMPLEMENT_CHECK_TX_FEE(fee_symbol);
+    IMPLEMENT_CHECK_TX_FEE;
     IMPLEMENT_CHECK_TX_REGID(txUid.type());
 
     if (price_points.size() == 0 || price_points.size() > 3) { //FIXME: hardcode here
@@ -80,8 +80,8 @@ string CPriceFeedTx::ToString(CAccountDBCache &accountCache) {
         str += pp.ToString() + ", ";
     }
 
-    return strprintf("txType=%s, hash=%s, ver=%d, txUid=%s, fee_symbol=%s, llFees=%ld, price_points=%s, nValidHeight=%d\n",
-                     GetTxType(nTxType), GetHash().ToString(), nVersion, txUid.ToString(), fee_symbol, llFees, str, nValidHeight);
+    return strprintf("txType=%s, hash=%s, ver=%d, txUid=%s, fee_symbol=%s, llFees=%ld, price_points=%s, valid_height=%d\n",
+                     GetTxType(nTxType), GetHash().ToString(), nVersion, txUid.ToString(), fee_symbol, llFees, str, valid_height);
 }
 
 Object CPriceFeedTx::ToJson(const CAccountDBCache &accountCache) const {
@@ -94,9 +94,4 @@ Object CPriceFeedTx::ToJson(const CAccountDBCache &accountCache) const {
     result.push_back(Pair("price_points", pricePointArray));
 
     return result;
-}
-
-bool CPriceFeedTx::GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds) {
-    // TODO:
-    return true;
 }

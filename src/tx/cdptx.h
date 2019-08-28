@@ -6,6 +6,7 @@
 #ifndef TX_CDP_H
 #define TX_CDP_H
 
+#include "entities/receipt.h"
 #include "tx.h"
 
 class CUserCDP;
@@ -39,7 +40,7 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
         READWRITE(fee_symbol);
         READWRITE(VARINT(llFees));
@@ -56,21 +57,18 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(nValidHeight) << txUid << fee_symbol << VARINT(llFees)
+            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(valid_height) << txUid << fee_symbol << VARINT(llFees)
                << cdp_txid << bcoin_symbol << scoin_symbol << VARINT(bcoins_to_stake) << VARINT(scoins_to_mint);
             sigHash = ss.GetHash();
         }
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return {{bcoin_symbol, bcoins_to_stake}}; }
     virtual TxID GetHash() const { return ComputeSignatureHash(); }
-    // virtual uint64_t GetFees() const { return llFees; }
     virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CCDPStakeTx>(*this); }
 
     virtual string ToString(CAccountDBCache &accountCache);
     virtual Object ToJson(const CAccountDBCache &accountCache) const;
-    virtual bool GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds);
 
     virtual bool CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state);
     virtual bool ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state);
@@ -84,7 +82,7 @@ private:
     TokenSymbol bcoin_symbol;  // optional: only required for 1st-time CDP staking
     TokenSymbol scoin_symbol;  // ditto
     uint64_t bcoins_to_stake;  // base coins amount to stake or collateralize
-    uint64_t scoins_to_mint;   // initial collateral ratio must be >= 190 (%), boosted by 10000
+    uint64_t scoins_to_mint;   // initial collateral ratio must be >= 190 (%), boosted by 10^4
 };
 
 /**
@@ -107,7 +105,7 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
         READWRITE(fee_symbol);
         READWRITE(VARINT(llFees));
@@ -122,21 +120,18 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(nValidHeight) << txUid << fee_symbol << VARINT(llFees)
+            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(valid_height) << txUid << fee_symbol << VARINT(llFees)
                << cdp_txid << VARINT(scoins_to_repay) << VARINT(bcoins_to_redeem);
             sigHash = ss.GetHash();
         }
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return {{SYMB::WUSD, bcoins_to_redeem}}; }
     virtual uint256 GetHash() const { return ComputeSignatureHash(); }
-    // virtual uint64_t GetFees() const { return llFees; }
     virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CCDPRedeemTx>(*this); }
 
     virtual string ToString(CAccountDBCache &accountCache);
     virtual Object ToJson(const CAccountDBCache &accountCache) const;
-    virtual bool GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds);
 
     virtual bool CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state);
     virtual bool ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state);
@@ -169,7 +164,7 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
         READWRITE(fee_symbol);
         READWRITE(VARINT(llFees));
@@ -183,28 +178,25 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(nValidHeight) << txUid << fee_symbol << VARINT(llFees)
+            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(valid_height) << txUid << fee_symbol << VARINT(llFees)
                << cdp_txid << VARINT(scoins_to_liquidate);
             sigHash = ss.GetHash();
         }
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return {{SYMB::WUSD, scoins_to_liquidate}}; }
     virtual uint256 GetHash() const { return ComputeSignatureHash(); }
-    // virtual uint64_t GetFees() const { return llFees; }
     virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CCDPLiquidateTx>(*this); }
 
     virtual string ToString(CAccountDBCache &accountCache);
     virtual Object ToJson(const CAccountDBCache &accountCache) const;
-    virtual bool GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds);
 
     virtual bool CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state);
     virtual bool ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state);
 
 private:
     bool ProcessPenaltyFees(const CTxCord &txCord, const CUserCDP &cdp, uint64_t scoinPenaltyFees,
-        CCacheWrapper &cw, CValidationState &state);
+        CCacheWrapper &cw, CValidationState &state, vector<CReceipt> &receipts);
 
 private:
     uint256     cdp_txid;            // target CDP to liquidate

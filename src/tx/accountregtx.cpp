@@ -17,7 +17,7 @@
 #include "miner/miner.h"
 
 bool CAccountRegisterTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
-    IMPLEMENT_CHECK_TX_FEE(SYMB::WICC);
+    IMPLEMENT_CHECK_TX_FEE;
 
     if (txUid.type() != typeid(CPubKey))
         return state.DoS(100, ERRORMSG("CAccountRegisterTx::CheckTx, userId must be CPubKey"),
@@ -59,7 +59,7 @@ bool CAccountRegisterTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper 
 
     if (typeid(CPubKey) == minerUid.type()) {
         account.miner_pubkey = minerUid.get<CPubKey>();
-        if (account.miner_pubkey.IsValid() && !account.miner_pubkey.IsFullyValid()) {
+        if (!account.miner_pubkey.IsFullyValid()) {
             return state.DoS(100, ERRORMSG("CAccountRegisterTx::ExecuteTx, minerPubKey:%s Is Invalid",
                 account.miner_pubkey.ToString()), UPDATE_ACCOUNT_FAIL, "MinerPKey Is Invalid");
         }
@@ -72,18 +72,10 @@ bool CAccountRegisterTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper 
     return true;
 }
 
-bool CAccountRegisterTx::GetInvolvedKeyIds(CCacheWrapper & cw, set<CKeyID> &keyIds) {
-    if (!txUid.get<CPubKey>().IsFullyValid())
-        return false;
-
-    keyIds.insert(txUid.get<CPubKey>().GetKeyId());
-    return true;
-}
-
 string CAccountRegisterTx::ToString(CAccountDBCache &accountCache) {
-    return strprintf("txType=%s, hash=%s, ver=%d, pubkey=%s, llFees=%ld, keyid=%s, nValidHeight=%d\n",
+    return strprintf("txType=%s, hash=%s, ver=%d, pubkey=%s, llFees=%ld, keyid=%s, valid_height=%d\n",
                      GetTxType(nTxType), GetHash().ToString(), nVersion, txUid.get<CPubKey>().ToString(), llFees,
-                     txUid.get<CPubKey>().GetKeyId().ToAddress(), nValidHeight);
+                     txUid.get<CPubKey>().GetKeyId().ToAddress(), valid_height);
 }
 
 Object CAccountRegisterTx::ToJson(const CAccountDBCache &accountCache) const {

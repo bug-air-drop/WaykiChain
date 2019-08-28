@@ -1422,12 +1422,12 @@ static bool GetDataTableWriteOutput(lua_State *L, CVmOperate &operate) {
         LogPrint("vm", "WriteOutput(), get addrType failed\n");
         return false;
     } else {
-        operate.accountType = (ACCOUNT_TYPE)doubleValue;
+        operate.accountType = (AccountType)doubleValue;
     }
 
-    if (operate.accountType == ACCOUNT_TYPE::REGID) {
+    if (operate.accountType == AccountType::REGID) {
        len = 6;
-    } else if (operate.accountType == ACCOUNT_TYPE::BASE58ADDR){
+    } else if (operate.accountType == AccountType::BASE58ADDR){
        len = 34;
     } else {
         LogPrint("vm", "WriteOutput(), invalid accountType: %d\n", operate.accountType);
@@ -1963,7 +1963,7 @@ static int ExTransferContractAsset(lua_State *L)
         return RetFalse(string(__FUNCTION__) + "para  err3 !");
     }
 
-    temp.get()->AutoMergeFreezeToFree(chainActive.Tip()->height);
+    temp.get()->AutoMergeFreezeToFree(chainActive.Height());
 
     uint64_t nMoney = temp.get()->GetBcoins();
 

@@ -14,7 +14,7 @@ using uint128_t = unsigned __int128;
 // class CDEXBuyLimitOrderTx
 
 bool CDEXOrderBaseTx::CheckOrderAmountRange(CValidationState &state, const string &title,
-                                          const TokenSymbol &symbol, int64_t amount) {
+                                          const TokenSymbol &symbol, const int64_t amount) {
     // TODO: should check the min amount of order by symbol
     if (!CheckCoinRange(symbol, amount))
         return state.DoS(100, ERRORMSG("%s amount out of range, symbol=%s, amount=%llu",
@@ -25,7 +25,7 @@ bool CDEXOrderBaseTx::CheckOrderAmountRange(CValidationState &state, const strin
 
 bool CDEXOrderBaseTx::CheckOrderPriceRange(CValidationState &state, const string &title,
                           const TokenSymbol &coin_symbol, const TokenSymbol &asset_symbol,
-                          int64_t price) {
+                          const int64_t price) {
     // TODO: should check the price range??
     if (price < 0)
         return state.DoS(100, ERRORMSG("%s price out of range,"
@@ -56,7 +56,7 @@ bool CDEXOrderBaseTx::CheckOrderSymbols(CValidationState &state, const string &t
     return true;
 }
 
-uint64_t CDEXOrderBaseTx::CalcCoinAmount(uint64_t assetAmount, uint64_t price) {
+uint64_t CDEXOrderBaseTx::CalcCoinAmount(uint64_t assetAmount, const uint64_t price) {
     uint128_t coinAmount = assetAmount * (uint128_t)price / kPercentBoost;
     assert(coinAmount < ULLONG_MAX);
     return (uint64_t)coinAmount;
@@ -67,9 +67,9 @@ uint64_t CDEXOrderBaseTx::CalcCoinAmount(uint64_t assetAmount, uint64_t price) {
 
 string CDEXBuyLimitOrderTx::ToString(CAccountDBCache &accountCache) {
     return strprintf(
-        "txType=%s, hash=%s, ver=%d, nValidHeight=%d, txUid=%s, llFees=%ld,"
+        "txType=%s, hash=%s, ver=%d, valid_height=%d, txUid=%s, llFees=%ld,"
         "coin_symbol=%u, asset_symbol=%u, amount=%lld, price=%lld\n",
-        GetTxType(nTxType), GetHash().GetHex(), nVersion, nValidHeight, txUid.ToString(), llFees,
+        GetTxType(nTxType), GetHash().GetHex(), nVersion, valid_height, txUid.ToString(), llFees,
         coin_symbol, asset_symbol, asset_amount, bid_price);
 }
 
@@ -83,7 +83,7 @@ Object CDEXBuyLimitOrderTx::ToJson(const CAccountDBCache &accountCache) const {
 }
 
 bool CDEXBuyLimitOrderTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
-    IMPLEMENT_CHECK_TX_FEE(fee_symbol);
+    IMPLEMENT_CHECK_TX_FEE;
     IMPLEMENT_CHECK_TX_REGID_OR_PUBKEY(txUid.type());
 
     if (!CheckOrderSymbols(state, "CDEXBuyLimitOrderTx::CheckTx,", coin_symbol, asset_symbol)) return false;
@@ -158,9 +158,9 @@ bool CDEXBuyLimitOrderTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper
 
 string CDEXSellLimitOrderTx::ToString(CAccountDBCache &accountCache) {
     return strprintf(
-        "txType=%s, hash=%s, ver=%d, nValidHeight=%d, txUid=%s, llFees=%ld,"
+        "txType=%s, hash=%s, ver=%d, valid_height=%d, txUid=%s, llFees=%ld,"
         "coin_symbol=%u, asset_symbol=%u, amount=%lld, price=%lld\n",
-        GetTxType(nTxType), GetHash().GetHex(), nVersion, nValidHeight, txUid.ToString(), llFees,
+        GetTxType(nTxType), GetHash().GetHex(), nVersion, valid_height, txUid.ToString(), llFees,
         coin_symbol, asset_symbol, asset_amount, ask_price);
 }
 
@@ -174,7 +174,7 @@ Object CDEXSellLimitOrderTx::ToJson(const CAccountDBCache &accountCache) const {
 }
 
 bool CDEXSellLimitOrderTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
-    IMPLEMENT_CHECK_TX_FEE(fee_symbol);
+    IMPLEMENT_CHECK_TX_FEE;
     IMPLEMENT_CHECK_TX_REGID_OR_PUBKEY(txUid.type());
 
     if (!CheckOrderSymbols(state, "CDEXSellLimitOrderTx::CheckTx,", coin_symbol, asset_symbol)) return false;
@@ -249,9 +249,9 @@ bool CDEXSellLimitOrderTx::ExecuteTx(int32_t height, int32_t index, CCacheWrappe
 
 string CDEXBuyMarketOrderTx::ToString(CAccountDBCache &accountCache) {
     return strprintf(
-        "txType=%s, hash=%s, ver=%d, nValidHeight=%d, txUid=%s, llFees=%ld,"
+        "txType=%s, hash=%s, ver=%d, valid_height=%d, txUid=%s, llFees=%ld,"
         "coin_symbol=%u, asset_symbol=%u, amount=%lld\n",
-        GetTxType(nTxType), GetHash().GetHex(), nVersion, nValidHeight, txUid.ToString(), llFees,
+        GetTxType(nTxType), GetHash().GetHex(), nVersion, valid_height, txUid.ToString(), llFees,
         coin_symbol, asset_symbol, coin_amount);
 }
 
@@ -265,7 +265,7 @@ Object CDEXBuyMarketOrderTx::ToJson(const CAccountDBCache &accountCache) const {
 }
 
 bool CDEXBuyMarketOrderTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
-    IMPLEMENT_CHECK_TX_FEE(fee_symbol);
+    IMPLEMENT_CHECK_TX_FEE;
     IMPLEMENT_CHECK_TX_REGID_OR_PUBKEY(txUid.type());
 
     if (!CheckOrderSymbols(state, "CDEXBuyMarketOrderTx::CheckTx,", coin_symbol, asset_symbol)) return false;
@@ -337,9 +337,9 @@ bool CDEXBuyMarketOrderTx::ExecuteTx(int32_t height, int32_t index, CCacheWrappe
 
 string CDEXSellMarketOrderTx::ToString(CAccountDBCache &accountCache) {
     return strprintf(
-        "txType=%s, hash=%s, ver=%d, nValidHeight=%d, txUid=%s, llFees=%ld,"
+        "txType=%s, hash=%s, ver=%d, valid_height=%d, txUid=%s, llFees=%ld,"
         "coin_symbol=%u, asset_symbol=%u, amount=%lld\n",
-        GetTxType(nTxType), GetHash().GetHex(), nVersion, nValidHeight, txUid.ToString(), llFees,
+        GetTxType(nTxType), GetHash().GetHex(), nVersion, valid_height, txUid.ToString(), llFees,
         coin_symbol, asset_symbol, asset_amount);
 }
 
@@ -352,7 +352,7 @@ Object CDEXSellMarketOrderTx::ToJson(const CAccountDBCache &accountCache) const 
 }
 
 bool CDEXSellMarketOrderTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
-    IMPLEMENT_CHECK_TX_FEE(fee_symbol);
+    IMPLEMENT_CHECK_TX_FEE;
     IMPLEMENT_CHECK_TX_REGID_OR_PUBKEY(txUid.type());
 
     if (!CheckOrderSymbols(state, "CDEXSellMarketOrderTx::CheckTx,", coin_symbol, asset_symbol)) return false;
@@ -425,9 +425,9 @@ bool CDEXSellMarketOrderTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapp
 
 string CDEXCancelOrderTx::ToString(CAccountDBCache &accountCache) {
     return strprintf(
-        "txType=%s, hash=%s, ver=%d, nValidHeight=%d, txUid=%s, llFees=%ld,"
+        "txType=%s, hash=%s, ver=%d, valid_height=%d, txUid=%s, llFees=%ld,"
         "orderId=%s\n",
-        GetTxType(nTxType), GetHash().GetHex(), nVersion, nValidHeight, txUid.ToString(), llFees,
+        GetTxType(nTxType), GetHash().GetHex(), nVersion, valid_height, txUid.ToString(), llFees,
         orderId.GetHex());
 }
 
@@ -439,7 +439,7 @@ Object CDEXCancelOrderTx::ToJson(const CAccountDBCache &accountCache) const {
 }
 
 bool CDEXCancelOrderTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
-    IMPLEMENT_CHECK_TX_FEE(fee_symbol);
+    IMPLEMENT_CHECK_TX_FEE;
     IMPLEMENT_CHECK_TX_REGID_OR_PUBKEY(txUid.type());
 
     CAccount srcAccount;
@@ -521,9 +521,9 @@ string CDEXSettleTx::ToString(CAccountDBCache &accountCache) {
     }
 
     return strprintf(
-        "txType=%s, hash=%s, ver=%d, nValidHeight=%d, txUid=%s, llFees=%ld,"
+        "txType=%s, hash=%s, ver=%d, valid_height=%d, txUid=%s, llFees=%ld,"
         "deal_items=%s\n",
-        GetTxType(nTxType), GetHash().GetHex(), nVersion, nValidHeight, txUid.ToString(), llFees,
+        GetTxType(nTxType), GetHash().GetHex(), nVersion, valid_height, txUid.ToString(), llFees,
         dealInfo);
 }
 
@@ -545,28 +545,8 @@ Object CDEXSettleTx::ToJson(const CAccountDBCache &accountCache) const {
     return result;
 }
 
-bool CDEXSettleTx::GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds) {
-    if (!CBaseTx::GetInvolvedKeyIds(cw, keyIds))
-        return false;
-
-    for (auto dealItem : dealItems) {
-        CDEXOrderDetail buyOrder;
-        if (!cw.dexCache.GetActiveOrder(dealItem.buyOrderId, buyOrder)) {
-            return ERRORMSG("CDEXSettleTx::GetInvolvedKeyIds, get buy order failed! txid=%s", dealItem.buyOrderId.ToString());
-        }
-        CDEXOrderDetail sellOrder;
-        if (!cw.dexCache.GetActiveOrder(dealItem.sellOrderId, sellOrder)) {
-            return ERRORMSG("CDEXSettleTx::GetInvolvedKeyIds, get sell order failed! txid=%s", dealItem.sellOrderId.ToString());
-        }
-        if (!AddInvolvedKeyIds({buyOrder.user_regid, sellOrder.user_regid}, cw, keyIds))
-            return false;
-    }
-
-    return true;
-}
-
 bool CDEXSettleTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
-    IMPLEMENT_CHECK_TX_FEE(fee_symbol);
+    IMPLEMENT_CHECK_TX_FEE;
     IMPLEMENT_CHECK_TX_REGID_OR_PUBKEY(txUid.type());
 
     if (txUid.get<CRegID>() != SysCfg().GetDexMatchSvcRegId()) {
@@ -606,8 +586,7 @@ bool CDEXSettleTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &
     buyOrder.coin_symbol == sellOrder.coin_symbol
 4. check asset type match
     buyOrder.asset_symbol == sellOrder.asset_symbol
-5. check price is right in valid height block
-6. check price match
+5. check price match
     a. limit type <-> limit type
         I.   dealPrice <= buyOrder.price
         II.  dealPrice >= sellOrder.price
@@ -617,7 +596,7 @@ bool CDEXSettleTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &
         I.   dealPrice == sellOrder.price
     d. market type <-> market type
         no limit
-7. check and operate deal amount
+6. check and operate deal amount
     a. check: dealCoinAmount == CalcCoinAmount(dealAssetAmount, price)
     b. else check: (dealCoinAmount / 10000) == (CalcCoinAmount(dealAssetAmount, price) / 10000)
     c. operate total deal:
@@ -625,7 +604,7 @@ bool CDEXSettleTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &
         buyActiveOrder.total_deal_asset_amount += dealAssetAmount
         sellActiveOrder.total_deal_coin_amount  += dealCoinAmount
         sellActiveOrder.total_deal_asset_amount += dealAssetAmount
-8. check the order limit amount and get residual amount
+7. check the order limit amount and get residual amount
     a. buy order
         if market price order {
             limitCoinAmount = buyOrder.coin_amount
@@ -640,6 +619,10 @@ bool CDEXSettleTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &
         limitAssetAmount = sellOrder.limitAmount
         check: limitAssetAmount >= sellActiveOrder.total_deal_asset_amount
         residualAmount = limitAssetAmount - dealCoinAmount
+
+8. subtract the buyer's coins and seller's assets
+    a. buyerFrozenCoins     -= dealCoinAmount
+    b. sellerFrozenAssets   -= dealAssetAmount
 9. calc deal fees
     buyerReceivedAssets = dealAssetAmount
     if buy order is USER_GEN_ORDER
@@ -651,11 +634,9 @@ bool CDEXSettleTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &
         dealCoinFee = dealCoinAmount * 0.04%
         sellerReceivedCoins -= dealCoinFee
         add dealCoinFee to totalFee of tx
-10. operate account
-    a. buyerFrozenCoins     -= dealCoinAmount
-    b. buyerAssets          += dealAssetAmount - dealAssetFee
-    c. sellerCoins          += dealCoinAmount - dealCoinFee
-    d. sellerFrozenAssets   -= dealAssetAmount
+10. add the buyer's assets and seller's coins
+    a. buyerAssets          += dealAssetAmount - dealAssetFee
+    b. sellerCoins          += dealCoinAmount - dealCoinFee
 11. check order fullfiled or save residual amount
     a. buy order
         if buy order is fulfilled {
@@ -677,6 +658,8 @@ bool CDEXSettleTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &
         }
 */
 bool CDEXSettleTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state) {
+    vector<CReceipt> receipts;
+
     CAccount srcAcct;
    if (!cw.accountCache.GetAccount(txUid, srcAcct)) {
         return state.DoS(100, ERRORMSG("CDEXSettleTx::ExecuteTx, read source addr account info error"),
@@ -717,10 +700,7 @@ bool CDEXSettleTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, C
                             REJECT_INVALID, "bad-order-match");
         }
 
-        // 5. check price is right in valid height block
-        // TODO: ...
-
-        // 6. check price match
+        // 5. check price match
         if (buyOrder.order_type == ORDER_LIMIT_PRICE && sellOrder.order_type == ORDER_LIMIT_PRICE) {
             if ( buyOrder.price < dealItem.dealPrice
                 || sellOrder.price > dealItem.dealPrice ) {
@@ -742,7 +722,7 @@ bool CDEXSettleTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, C
             // no limit
         }
 
-        // 7. check and operate deal amount
+        // 6. check and operate deal amount
         uint64_t calcCoinAmount = CDEXOrderBaseTx::CalcCoinAmount(dealItem.dealAssetAmount, dealItem.dealPrice);
         if (calcCoinAmount != dealItem.dealCoinAmount) {
             return state.DoS(100, ERRORMSG("CDEXSettleTx::ExecuteTx, the dealCoinAmount not match"),
@@ -753,7 +733,7 @@ bool CDEXSettleTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, C
         sellOrder.total_deal_coin_amount += dealItem.dealCoinAmount;
         sellOrder.total_deal_asset_amount += dealItem.dealAssetAmount;
 
-        // 8. check the order limit amount and get residual amount
+        // 7. check the order limit amount and get residual amount
         uint64_t buyResidualAmount = 0;
         uint64_t sellResidualAmount = 0;
 
@@ -783,41 +763,63 @@ bool CDEXSettleTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, C
             sellResidualAmount = limitAssetAmount - sellOrder.total_deal_asset_amount;
         }
 
+        // 8. subtract the buyer's coins and seller's assets
+        // - unfree and subtract the coins from buyer account
+        if (   !buyOrderAccount.OperateBalance(buyOrder.coin_symbol, UNFREEZE, dealItem.dealCoinAmount)
+            || !buyOrderAccount.OperateBalance(buyOrder.coin_symbol, SUB_FREE, dealItem.dealCoinAmount)) {// - subtract buyer's coins
+            return state.DoS(100, ERRORMSG("CDEXSettleTx::ExecuteTx, subtract coins from buyer account failed"),
+                    REJECT_INVALID, "operate-account-failed");
+        }
+        // - unfree and subtract the assets from seller account
+        if (   !sellOrderAccount.OperateBalance(sellOrder.asset_symbol, UNFREEZE, dealItem.dealAssetAmount)
+            || !sellOrderAccount.OperateBalance(sellOrder.asset_symbol, SUB_FREE, dealItem.dealAssetAmount)) { // - subtract seller's assets
+            return state.DoS(100, ERRORMSG("CDEXSettleTx::ExecuteTx, subtract coins from seller account failed"),
+                            REJECT_INVALID, "operate-account-failed");
+        }
+
         // 9. calc deal fees
-        // 9.1) buyer spends WUSD to get assets
         uint64_t dexDealFeeRatio;
         if (!cw.sysParamCache.GetParam(DEX_DEAL_FEE_RATIO, dexDealFeeRatio)) {
             return state.DoS(100, ERRORMSG("CDEXSettleTx::ExecuteTx, read DEX_DEAL_FEE_RATIO error"),
                                 READ_SYS_PARAM_FAIL, "read-sysparamdb-error");
         }
         uint64_t buyerReceivedAssets = dealItem.dealAssetAmount;
+        // 9.1 buyer pay the fee from the received assets to settler
         if (buyOrder.generate_type == USER_GEN_ORDER) {
+
             uint64_t dealAssetFee = dealItem.dealAssetAmount * dexDealFeeRatio / kPercentBoost;
             buyerReceivedAssets = dealItem.dealAssetAmount - dealAssetFee;
-            assert (buyOrder.asset_symbol == SYMB::WICC || buyOrder.asset_symbol == SYMB::WGRT);
             // give the fee to settler
             srcAcct.OperateBalance(buyOrder.asset_symbol, ADD_FREE, dealAssetFee);
+
+            CReceipt receipt(buyOrderAccount.regid, srcAcct.regid, buyOrder.asset_symbol, dealAssetFee,
+                "deal asset fee to settler");
+            receipts.push_back(receipt);
         }
-        // 9.2 seller sells assets to get WUSD
+        // 9.2 seller pay the fee from the received coins to settler
         uint64_t sellerReceivedCoins = dealItem.dealCoinAmount;
         if (sellOrder.generate_type == USER_GEN_ORDER) {
             uint64_t dealCoinFee = dealItem.dealCoinAmount * dexDealFeeRatio / kPercentBoost;
             sellerReceivedCoins = dealItem.dealCoinAmount - dealCoinFee;
-            assert (sellOrder.coin_symbol == SYMB::WUSD);
-            // give the fee to settler
-            srcAcct.OperateBalance(sellOrder.coin_symbol, ADD_FREE, dealCoinFee);
+            // give the buyer fee to settler
+            srcAcct.OperateBalance(buyOrder.coin_symbol, ADD_FREE, dealCoinFee);
+            CReceipt receipt(buyOrderAccount.regid, srcAcct.regid, buyOrder.coin_symbol, dealCoinFee,
+                "deal coin fee to settler");
+            receipts.push_back(receipt);
         }
 
-        // 10. operate account
-        if (   !buyOrderAccount.OperateBalance(buyOrder.coin_symbol, UNFREEZE, dealItem.dealCoinAmount)
-            || !buyOrderAccount.OperateBalance(buyOrder.coin_symbol, SUB_FREE, dealItem.dealCoinAmount) // - minus buyer's coins
-            || !buyOrderAccount.OperateBalance(buyOrder.asset_symbol, ADD_FREE, buyerReceivedAssets)    // + add buyer's assets
-            || !sellOrderAccount.OperateBalance(sellOrder.coin_symbol, ADD_FREE, sellerReceivedCoins)   // + add seller's coin
-            || !sellOrderAccount.OperateBalance(sellOrder.asset_symbol, UNFREEZE, dealItem.dealAssetAmount)
-            || !sellOrderAccount.OperateBalance(sellOrder.asset_symbol, SUB_FREE, dealItem.dealAssetAmount)) { // - minus seller's assets
-            return state.DoS(100, ERRORMSG("CDEXSettleTx::ExecuteTx, operate coins or assets failed"),
+        // 10. add the buyer's assets and seller's coins
+        if (   !buyOrderAccount.OperateBalance(buyOrder.asset_symbol, ADD_FREE, buyerReceivedAssets)    // + add buyer's assets
+            || !sellOrderAccount.OperateBalance(sellOrder.coin_symbol, ADD_FREE, sellerReceivedCoins)){ // + add seller's coin
+            return state.DoS(100, ERRORMSG("CDEXSettleTx::ExecuteTx, add assets to buyer or add coins to seller failed"),
                             REJECT_INVALID, "operate-account-failed");
         }
+        CReceipt buyReceipt(sellOrderAccount.regid, buyOrderAccount.regid, buyOrder.asset_symbol, buyerReceivedAssets,
+            "deal assets to buyer");
+        receipts.push_back(buyReceipt);
+        CReceipt sellReceipt(buyOrderAccount.regid, sellOrderAccount.regid, buyOrder.coin_symbol, sellerReceivedCoins,
+            "deal coins to settler");
+        receipts.push_back(sellReceipt);
 
         // 11. check order fullfiled or save residual amount
         if (buyResidualAmount == 0) { // buy order fulfilled
@@ -867,6 +869,9 @@ bool CDEXSettleTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, C
         return state.DoS(100, ERRORMSG("CDEXSettleTx::ExecuteTx, set account info error"),
                          WRITE_ACCOUNT_FAIL, "bad-write-accountdb");
 
+    if(!cw.txReceiptCache.SetTxReceipts(GetHash(), receipts))
+        return state.DoS(100, ERRORMSG("CDEXSettleTx::ExecuteTx, set tx receipts failed!! txid=%s",
+                        GetHash().ToString()), REJECT_INVALID, "set-tx-receipt-failed");
     return true;
 }
 

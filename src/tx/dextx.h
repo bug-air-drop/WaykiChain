@@ -17,15 +17,15 @@ public:
 
 public:
     bool CheckOrderAmountRange(CValidationState &state, const string &title,
-                             const TokenSymbol &symbol, int64_t amount);
+                             const TokenSymbol &symbol, const int64_t amount);
 
     bool CheckOrderPriceRange(CValidationState &state, const string &title,
                               const TokenSymbol &coin_symbol, const TokenSymbol &asset_symbol,
-                              int64_t price);
+                              const int64_t price);
     bool CheckOrderSymbols(CValidationState &state, const string &title,
                            const TokenSymbol &coinSymbol, const TokenSymbol &assetSymbol);
 public:
-    static uint64_t CalcCoinAmount(uint64_t assetAmount, uint64_t price);
+    static uint64_t CalcCoinAmount(uint64_t assetAmount, const uint64_t price);
 };
 
 class CDEXBuyLimitOrderTx : public CDEXOrderBaseTx {
@@ -48,7 +48,7 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
         READWRITE(fee_symbol);
@@ -64,15 +64,14 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(nValidHeight) << txUid << fee_symbol << VARINT(llFees)
-               << coin_symbol << asset_symbol << asset_amount << bid_price;
+            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(valid_height) << txUid << fee_symbol << VARINT(llFees)
+               << coin_symbol << asset_symbol << VARINT(asset_amount) << VARINT(bid_price);
             sigHash = ss.GetHash();
         }
 
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return {{SYMB::WICC, 0}}; }
     virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CDEXBuyLimitOrderTx>(*this); }
     string ToString(CAccountDBCache &accountCache);
     virtual Object ToJson(const CAccountDBCache &accountCache) const; //json-rpc usage
@@ -105,7 +104,7 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
         READWRITE(fee_symbol);
@@ -121,15 +120,14 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(nValidHeight) << txUid << fee_symbol << VARINT(llFees)
-               << coin_symbol << asset_symbol << asset_amount << ask_price;
+            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(valid_height) << txUid << fee_symbol << VARINT(llFees)
+               << coin_symbol << asset_symbol << VARINT(asset_amount) << VARINT(ask_price);
             sigHash = ss.GetHash();
         }
 
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return {{SYMB::WICC, 0}}; }
     virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CDEXSellLimitOrderTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache); //logging usage
     virtual Object ToJson(const CAccountDBCache &accountCache) const; //json-rpc usage
@@ -160,7 +158,7 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
         READWRITE(fee_symbol);
@@ -175,15 +173,14 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(nValidHeight) << txUid << fee_symbol << VARINT(llFees)
-               << coin_symbol << asset_symbol << coin_amount;
+            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(valid_height) << txUid << fee_symbol << VARINT(llFees)
+               << coin_symbol << asset_symbol << VARINT(coin_amount);
             sigHash = ss.GetHash();
         }
 
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return {{SYMB::WICC, 0}}; }
     virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CDEXBuyMarketOrderTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache); //logging usage
     virtual Object ToJson(const CAccountDBCache &accountCache) const; //json-rpc usage
@@ -213,7 +210,7 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
         READWRITE(fee_symbol);
@@ -228,15 +225,14 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(nValidHeight) << txUid << fee_symbol << VARINT(llFees)
-               << coin_symbol << asset_symbol << asset_amount;
+            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(valid_height) << txUid << fee_symbol << VARINT(llFees)
+               << coin_symbol << asset_symbol << VARINT(asset_amount);
             sigHash = ss.GetHash();
         }
 
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return {{SYMB::WICC, 0}}; }
     virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CDEXSellMarketOrderTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache); //logging usage
     virtual Object ToJson(const CAccountDBCache &accountCache) const; //json-rpc usage
@@ -263,7 +259,7 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
         READWRITE(fee_symbol);
@@ -276,7 +272,7 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(nValidHeight) << txUid << fee_symbol << VARINT(llFees)
+            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(valid_height) << txUid << fee_symbol << VARINT(llFees)
                << orderId;
             sigHash = ss.GetHash();
         }
@@ -284,7 +280,6 @@ public:
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return {{SYMB::WICC, 0}}; }
     virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CDEXCancelOrderTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache); //logging usage
     virtual Object ToJson(const CAccountDBCache &accountCache) const; //json-rpc usage
@@ -326,7 +321,7 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
         READWRITE(fee_symbol);
@@ -339,7 +334,7 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(nValidHeight) << txUid << fee_symbol << VARINT(llFees)
+            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(valid_height) << txUid << fee_symbol << VARINT(llFees)
                << dealItems;
             sigHash = ss.GetHash();
         }
@@ -353,11 +348,9 @@ public:
 
     vector<DEXDealItem>& GetDealItems() { return dealItems; }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return {{SYMB::WICC, 0}}; }
     virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CDEXSettleTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache); //logging usage
     virtual Object ToJson(const CAccountDBCache &accountCache) const; //json-rpc usage
-    virtual bool GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds);
 
     virtual bool CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state);
     virtual bool ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state);

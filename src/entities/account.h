@@ -7,7 +7,6 @@
 #ifndef ENTITIES_ACCOUNT_H
 #define ENTITIES_ACCOUNT_H
 
-#include <boost/variant.hpp>
 #include <functional>
 #include <map>
 #include <memory>
@@ -17,6 +16,7 @@
 
 #include "asset.h"
 #include "crypto/hash.h"
+#include "entities/receipt.h"
 #include "id.h"
 #include "vote.h"
 #include "json/json_spirit_utils.h"
@@ -166,7 +166,7 @@ public:
     bool StakeVoteBcoins(VoteType type, const uint64_t votes);
     bool ProcessDelegateVotes(const vector<CCandidateVote>& candidateVotesIn,
                               vector<CCandidateReceivedVote>& candidateVotesInOut, const uint32_t currHeight,
-                              const CAccountDBCache* pAccountCache);
+                              const CAccountDBCache &accountCache, vector<CReceipt> &receipts);
 
     uint64_t GetVotedBcoins(const vector<CCandidateReceivedVote>& candidateVotes, const uint64_t currHeight);
 
@@ -175,7 +175,7 @@ public:
     uint64_t ComputeBlockInflateInterest(const uint32_t currHeight) const;
 
     bool HaveOwnerPubKey() const { return owner_pubkey.IsFullyValid(); }
-    bool RegIDIsMature() const;
+    bool IsRegistered() const { return owner_pubkey.IsValid(); }
 
     bool IsEmptyValue() const { return (tokens.size() == 0); }
     bool IsEmpty() const { return keyid.IsEmpty(); }
@@ -192,7 +192,7 @@ private:
     bool IsFcoinWithinRange(uint64_t nAddMoney);
 };
 
-enum ACCOUNT_TYPE {
+enum AccountType {
     REGID      = 0x01,  //!< Registration account id
     BASE58ADDR = 0x02,  //!< Public key
 };
@@ -203,7 +203,7 @@ enum ACCOUNT_TYPE {
  */
 class CVmOperate{
 public:
-    ACCOUNT_TYPE accountType;   //!< regid or base58addr
+    AccountType accountType;   //!< regid or base58addr
     uint8_t accountId[34];      //!< accountId: address
     BalanceOpType opType;       //!< OperType
     uint32_t timeoutHeight;     //!< the transacion timeout height
@@ -220,7 +220,7 @@ public:
     )
 
     CVmOperate() {
-        accountType = ACCOUNT_TYPE::REGID;
+        accountType = AccountType::REGID;
         memset(accountId, 0, 34);
         opType        = BalanceOpType::NULL_OP;
         timeoutHeight = 0;

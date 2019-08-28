@@ -205,9 +205,9 @@ string CBlockPriceMedianTx::ToString(CAccountDBCache &accountCache) {
                                  item.second);
     }
 
-    return strprintf("txType=%s, hash=%s, ver=%d, txUid=%s, llFees=%ld, median_price_points=%s, nValidHeight=%d\n",
+    return strprintf("txType=%s, hash=%s, ver=%d, txUid=%s, llFees=%ld, median_price_points=%s, valid_height=%d\n",
                      GetTxType(nTxType), GetHash().GetHex(), nVersion, txUid.ToString(), llFees, pricePoints,
-                     nValidHeight);
+                     valid_height);
 }
 
 Object CBlockPriceMedianTx::ToJson(const CAccountDBCache &accountCache) const {
@@ -226,11 +226,4 @@ Object CBlockPriceMedianTx::ToJson(const CAccountDBCache &accountCache) const {
     return result;
 }
 
-bool CBlockPriceMedianTx::GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds) {
-    //TODO
-    return true;
-}
-
-map<CoinPricePair, uint64_t> CBlockPriceMedianTx::GetMedianPrice() const {
-    return median_price_points;
-}
+map<CoinPricePair, uint64_t> CBlockPriceMedianTx::GetMedianPrice() const { return median_price_points; }

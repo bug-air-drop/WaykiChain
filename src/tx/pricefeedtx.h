@@ -25,7 +25,7 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
         READWRITE(VARINT(llFees));
 
@@ -37,7 +37,7 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(nValidHeight) << txUid << VARINT(llFees)
+            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(valid_height) << txUid << VARINT(llFees)
                << fee_symbol << price_points;
             sigHash = ss.GetHash();
         }
@@ -45,12 +45,10 @@ public:
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return {{SYMB::WICC, 0}}; }
     virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CPriceFeedTx>(*this); }
     virtual double GetPriority() const { return kPriceFeedTransactionPriority; }    // Top priority
     virtual string ToString(CAccountDBCache &accountCache);            // logging usage
     virtual Object ToJson(const CAccountDBCache &accountCache) const;  // json-rpc usage
-    virtual bool GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds);
 
     virtual bool CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state);
     virtual bool ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state);

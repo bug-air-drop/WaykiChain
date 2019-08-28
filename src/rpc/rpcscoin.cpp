@@ -93,21 +93,21 @@ Value submitpricefeedtx(const Array& params, bool fHelp) {
     return SubmitTx(feedUid, tx);
 }
 
-Value submitstakefcointx(const Array& params, bool fHelp) {
+Value submitfcoinstaketx(const Array& params, bool fHelp) {
     if (fHelp || params.size() < 2 || params.size() > 3) {
         throw runtime_error(
-            "submitstakefcointx \"addr\" \"fcoin amount\" [\"symbol:fee:unit\"]\n"
+            "submitfcoinstaketx \"addr\" \"fcoin_amount\" [\"symbol:fee:unit\"]\n"
             "\nstake fcoins\n"
             "\nArguments:\n"
             "1.\"addr\":             (string, required)\n"
-            "2.\"fcoin amount\":     (numeric, required) amount of fcoins to stake\n"
+            "2.\"fcoin_amount\":     (numeric, required) amount of fcoins to stake\n"
             "3. \"symbol:fee:unit\": (string:numeric:string, optional) fee paid to miner, default is WICC:10000:sawi\n"
             "\nResult:\n"
             "\"txid\"                (string) The transaction id.\n"
             "\nExamples:\n"
-            + HelpExampleCli("submitstakefcointx", "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" 200000000\n")
+            + HelpExampleCli("submitfcoinstaketx", "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" 200000000\n")
             + "\nAs json rpc call\n"
-            + HelpExampleRpc("submitstakefcointx", "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" 200000000\n")
+            + HelpExampleRpc("submitfcoinstaketx", "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" 200000000\n")
         );
     }
 
@@ -126,29 +126,31 @@ Value submitstakefcointx(const Array& params, bool fHelp) {
 }
 
 /*************************************************<< CDP >>**************************************************/
-Value submitstakecdptx(const Array& params, bool fHelp) {
+Value submitcdpstaketx(const Array& params, bool fHelp) {
     if (fHelp || params.size() < 3 || params.size() > 6) {
         throw runtime_error(
-            "submitstakecdptx \"addr\" stake_combo_money mint_combo_money [\"cdp_id\"] [symbol:fee:unit]\n"
+            "submitcdpstaketx \"addr\" stake_combo_money mint_combo_money [\"cdp_id\"] [symbol:fee:unit]\n"
             "\nsubmit a CDP Staking Tx.\n"
             "\nArguments:\n"
-            "1. \"addr\": CDP Staker's account address\n"
+            "1. \"addr\":               (string, required) CDP Staker's account address\n"
             "2. \"stake_combo_money\":  (symbol:amount:unit, required) Combo Money to stake into the CDP,"
-                                                                      " default symbol=WICC, default unit=sawi\n"
+            " default symbol=WICC, default unit=sawi\n"
             "3. \"mint_combo_money\":   (symbol:amount:unit, required), Combo Money to mint from the CDP,"
-                                                                      " default symbol=WUSD, default unit=sawi\n"
+            " default symbol=WUSD, default unit=sawi\n"
             "4. \"cdp_id\":             (string, optional) CDP ID (tx hash of the first CDP Stake Tx)\n"
             "5. \"symbol:fee:unit\":    (symbol:amount:unit, optional) fee paid to miner, default is WICC:100000:sawi\n"
             "\nResult:\n"
             "\"txid\"                   (string) The transaction id.\n"
             "\nExamples:\n" +
-            HelpExampleCli("submitstakecdptx",
-                           "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" 20000000000 3000000 "
-                           "\"b850d88bf1bed66d43552dd724c18f10355e9b6657baeae262b3c86a983bee71\" \"WICC:1000000:sawi\"\n") +
+            HelpExampleCli(
+                "submitcdpstaketx",
+                "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" \"WICC:20000000000:sawi\" \"WUSD:3000000:sawi\" "
+                "\"b850d88bf1bed66d43552dd724c18f10355e9b6657baeae262b3c86a983bee71\" \"WICC:1000000:sawi\"\n") +
             "\nAs json rpc call\n" +
-            HelpExampleRpc("submitstakecdptx",
-                           "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\", 2000000000, 3000000, "
-                           "\"b850d88bf1bed66d43552dd724c18f10355e9b6657baeae262b3c86a983bee71\", \"WICC:1000000:sawi\"\n"));
+            HelpExampleRpc(
+                "submitcdpstaketx",
+                "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\", \"WICC:2000000000:sawi\", \"WUSD:3000000:sawi\", "
+                "\"b850d88bf1bed66d43552dd724c18f10355e9b6657baeae262b3c86a983bee71\", \"WICC:1000000:sawi\"\n"));
     }
 
     const CUserID &cdpUid = RPC_PARAM::GetUserId(params[0]);
@@ -171,40 +173,46 @@ Value submitstakecdptx(const Array& params, bool fHelp) {
 
     if (cdpId.IsEmpty()) { // new stake cdp
         if (cmBcoinsToStake.amount == 0)
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Error: stake_amount is zero!");
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "stake_amount is zero!");
 
         if (cmScoinsToMint.amount == 0)
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Error: mint_amount is zero!");
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "mint_amount is zero!");
     }
 
     CCDPStakeTx tx(cdpUid, validHeight, cdpId, cmFee, cmBcoinsToStake, cmScoinsToMint);
     return SubmitTx(cdpUid, tx);
 }
 
-Value submitredeemcdptx(const Array& params, bool fHelp) {
+Value submitcdpredeemtx(const Array& params, bool fHelp) {
     if (fHelp || params.size() < 4 || params.size() > 5) {
         throw runtime_error(
-            "submitredeemcdptx \"addr\" \"cdp_id\" repay_amount redeem_amount [\"symbol:fee:unit\"]\n"
+            "submitcdpredeemtx \"addr\" \"cdp_id\" repay_amount redeem_amount [\"symbol:fee:unit\"]\n"
             "\nsubmit a CDP Redemption Tx\n"
             "\nArguments:\n"
-            "1. \"addr\" :              (string) CDP redemptor's address\n"
-            "2. \"cdp_id\":             (string) ID of existing CDP (tx hash of the first CDP Stake Tx)\n"
-            "3. \"repay_amount\":       (numeric required) scoins (E.g. WUSD) to stake into the CDP, boosted by 10^8\n"
-            "4. \"redeem_amount\":      (numeric required) bcoins (E.g. WICC) to stake into the CDP, boosted by 10^8\n"
-            "5. \"symbol:fee:unit\":    (string:numeric:string, optional) fee paid to miner, default is WICC:100000:sawi\n"
+            "1. \"addr\" :              (string, required) CDP redemptor's address\n"
+            "2. \"cdp_id\":             (string, required) ID of existing CDP (tx hash of the first CDP Stake Tx)\n"
+            "3. \"repay_amount\":       (numeric, required) scoins (E.g. WUSD) to repay into the CDP, boosted by 10^8\n"
+            "4. \"redeem_amount\":      (numeric, required) bcoins (E.g. WICC) to redeem from the CDP, boosted by 10^8\n"
+            "5. \"symbol:fee:unit\":    (string:numeric:string, optional) fee paid to miner, default is "
+            "WICC:100000:sawi\n"
             "\nResult:\n"
             "\"txid\"                   (string) The transaction id.\n"
-            "\nExamples:\n"
-            + HelpExampleCli("submitredeemcdptx", "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" \"b850d88bf1bed66d43552dd724c18f10355e9b6657baeae262b3c86a983bee71\"  20000000000 30000 \"1000000\"\n")
-            + "\nAs json rpc call\n"
-            + HelpExampleRpc("submitredeemcdptx", "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\", \"b850d88bf1bed66d43552dd724c18f10355e9b6657baeae262b3c86a983bee71\", 2000000000, 30000, \"1000000\"\n")
-        );
+            "\nExamples:\n" +
+            HelpExampleCli("submitcdpredeemtx",
+                           "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" "
+                           "\"b850d88bf1bed66d43552dd724c18f10355e9b6657baeae262b3c86a983bee71\" "
+                           "20000000000 40000000000 \"WICC:1000000:sawi\"\n") +
+            "\nAs json rpc call\n" +
+            HelpExampleRpc("submitcdpredeemtx",
+                           "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\", "
+                           "\"b850d88bf1bed66d43552dd724c18f10355e9b6657baeae262b3c86a983bee71\", "
+                           "20000000000, 40000000000, \"WICC:1000000:sawi\"\n"));
     }
 
     const CUserID& cdpUid   = RPC_PARAM::GetUserId(params[0].get_str());
     uint256 cdpTxId         = uint256S(params[1].get_str());
-    uint64_t repayAmount    = params[2].get_uint64();
-    uint64_t redeemAmount   = params[3].get_uint64();
+    uint64_t repayAmount    = AmountToRawValue(params[2]);
+    uint64_t redeemAmount   = AmountToRawValue(params[3]);
     const ComboMoney& cmFee = RPC_PARAM::GetFee(params, 4, CDP_STAKE_TX);
     int32_t validHeight     = chainActive.Height();
 
@@ -212,23 +220,30 @@ Value submitredeemcdptx(const Array& params, bool fHelp) {
     return SubmitTx(cdpUid, tx);
 }
 
-Value submitliquidatecdptx(const Array& params, bool fHelp) {
+Value submitcdpliquidatetx(const Array& params, bool fHelp) {
     if (fHelp || params.size() < 3 || params.size() > 4) {
         throw runtime_error(
-            "submitliquidatecdptx \"addr\" \"cdp_id\" liquidate_amount [symbol:fee:unit]\n"
+            "submitcdpliquidatetx \"addr\" \"cdp_id\" liquidate_amount [symbol:fee:unit]\n"
             "\nsubmit a CDP Liquidation Tx\n"
             "\nArguments:\n"
-            "1. \"addr\" : (string required) CDP liquidator's address\n"
-            "2. \"cdp_id\": (string required) ID of existing CDP (tx hash of the first CDP Stake Tx)\n"
-            "3. \"liquidate_amount\": (numeric required) WUSD coins to repay to CDP, boosted by 10^8 (penalty fees deducted separately from sender account)\n"
-            "4. \"symbol:fee:unit\": (string:numeric:string, optional) fee paid to miner, default is WICC:100000:sawi\n"
+            "1. \"addr\" :              (string, required) CDP liquidator's address\n"
+            "2. \"cdp_id\":             (string, required) ID of existing CDP (tx hash of the first CDP Stake Tx)\n"
+            "3. \"liquidate_amount\":   (numeric, required) WUSD coins to repay to CDP, boosted by 10^8 (penalty fees "
+            "deducted separately from sender account)\n"
+            "4. \"symbol:fee:unit\":    (string:numeric:string, optional) fee paid to miner, default is "
+            "WICC:100000:sawi\n"
             "\nResult:\n"
             "\"txid\" (string) The transaction id.\n"
-            "\nExamples:\n"
-            + HelpExampleCli("submitliquidatecdptx", "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\"  \"b850d88bf1bed66d43552dd724c18f10355e9b6657baeae262b3c86a983bee71\" 20000000000 \"WICC:1000000\"\n")
-            + "\nAs json rpc call\n"
-            + HelpExampleRpc("submitliquidatecdptx", "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\", \"b850d88bf1bed66d43552dd724c18f10355e9b6657baeae262b3c86a983bee71\", 2000000000, \"WICC:1000000\"\n")
-        );
+            "\nExamples:\n" +
+            HelpExampleCli(
+                "submitcdpliquidatetx",
+                "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\"  "
+                "\"b850d88bf1bed66d43552dd724c18f10355e9b6657baeae262b3c86a983bee71\" 20000000000 \"WICC:1000000:sawi\"\n") +
+            "\nAs json rpc call\n" +
+            HelpExampleRpc("submitcdpliquidatetx",
+                           "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\", "
+                           "\"b850d88bf1bed66d43552dd724c18f10355e9b6657baeae262b3c86a983bee71\", 2000000000, "
+                           "\"WICC:1000000:sawi\"\n"));
     }
 
     const CUserID& userId    = RPC_PARAM::GetUserId(params[0]);
@@ -283,6 +298,8 @@ Value getscoininfo(const Array& params, bool fHelp){
     uint64_t globalOwedScoins   = 0;
     pCdMan->pCdpCache->cdpMemCache.GetGlobalItem(globalStakedBcoins, globalOwedScoins);
 
+    bool global_collateral_ceiling_reached = globalStakedBcoins > globalCollateralCeiling * COIN;
+
     set<CUserCDP> forceLiquidateCdps;
     uint64_t forceLiquidateRatio = 0;
     if (!pCdMan->pSysParamCache->GetParam(SysParamType::CDP_FORCE_LIQUIDATE_RATIO, forceLiquidateRatio)) {
@@ -296,22 +313,26 @@ Value getscoininfo(const Array& params, bool fHelp){
     Array prices;
     for (auto& item : medianPricePoints) {
         Object price;
-        price.push_back(Pair("coin_symbol", item.first.first));
-        price.push_back(Pair("price_symbol", item.first.second));
-        price.push_back(Pair("price", (double)item.second / kPercentBoost));
+        price.push_back(Pair("coin_symbol",                     item.first.first));
+        price.push_back(Pair("price_symbol",                    item.first.second));
+        price.push_back(Pair("price",                           (double)item.second / kPercentBoost));
         prices.push_back(price);
     }
 
     obj.push_back(Pair("height",                                height));
     obj.push_back(Pair("median_price",                          prices));
     obj.push_back(Pair("slide_window_block_count",              slideWindowBlockCount));
-    obj.push_back(Pair("global_collateral_ceiling",             globalCollateralCeiling));
-    obj.push_back(Pair("global_collateral_ratio_floor",         globalCollateralRatioFloor));
+
     obj.push_back(Pair("global_staked_bcoins",                  globalStakedBcoins));
     obj.push_back(Pair("global_owed_scoins",                    globalOwedScoins));
-    obj.push_back(Pair("global_collateral_ratio",               globalCollateralRatio));
+    obj.push_back(Pair("global_collateral_ceiling",             globalCollateralCeiling * COIN));
+    obj.push_back(Pair("global_collateral_ceiling_reached",     global_collateral_ceiling_reached));
+
+    obj.push_back(Pair("global_collateral_ratio_floor",         strprintf("%.4f%%", (double)globalCollateralRatioFloor / kPercentBoost * 100)));
+    obj.push_back(Pair("global_collateral_ratio",               strprintf("%.4f%%", (double)globalCollateralRatio / kPercentBoost * 100)));
     obj.push_back(Pair("global_collateral_ratio_floor_reached", globalCollateralRatioFloorReached));
-    obj.push_back(Pair("force_liquidate_ratio",                 forceLiquidateRatio));
+
+    obj.push_back(Pair("force_liquidate_ratio",                 strprintf("%.4f%%", (double)forceLiquidateRatio / kPercentBoost * 100)));
     obj.push_back(Pair("force_liquidate_cdp_amount",            forceLiquidateCdps.size()));
 
     return obj;
@@ -827,7 +848,7 @@ Value submitassetissuetx(const Array& params, bool fHelp) {
         throw JSONRPCError(RPC_INVALID_PARAMS,
                            strprintf("asset total_supply=%lld can not <= 0 or > %llu", totalSupply, MAX_ASSET_TOTAL_SUPPLY));
     bool mintable    = params[5].get_bool();
-    ComboMoney cmFee = RPC_PARAM::GetFee(params, 6, DEX_MARKET_SELL_ORDER_TX);
+    ComboMoney cmFee = RPC_PARAM::GetFee(params, 6, TxType::ASSET_ISSUE_TX);
 
     // Get account for checking balance
     CAccount txAccount = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, uid);
@@ -845,36 +866,86 @@ Value submitassetissuetx(const Array& params, bool fHelp) {
 }
 
 Value submitassetupdatetx(const Array& params, bool fHelp) {
-    if (fHelp || params.size() < 5 || params.size() > 6) {
+    if (fHelp || params.size() < 4 || params.size() > 5) {
         throw runtime_error(
-            "submitassetupdatetx \"addr\" \"asset_symbol\" \"asset_owner_addr\" \"asset_name\" mint_amount [symbol:fee:unit]\n"
-            "\nsubmit an asset issue tx.\n"
-            "\nthe tx creator must have enough WICC for issued fee(550 WICC).\n"
+            "submitassetupdatetx \"addr\" \"asset_symbol\" \"update_type\" \"update_value\" [symbol:fee:unit]\n"
+            "\nsubmit an asset update tx.\n"
+            "\nthe tx creator must have enough WICC for asset update fee(200 WICC).\n"
             "\nArguments:\n"
             "1.\"addr\": (string required) tx owner address\n"
             "2.\"asset_symbol\": (string required) asset symbol, E.g WICC | WUSD\n"
-            "3.\"asset_owner_addr\": (string required) asset owner address, can be same as tx owner address\n"
-            "4.\"asset_name\": (string required) asset long name, E.g WaykiChain coin\n"
-            "5.\"mint_amount\": (numeric required) mint amount\n"
-            "6.\"symbol:fee:unit\":(string:numeric:string, optional) fee paid for miner, default is WICC:10000:sawi\n"
+            "3.\"update_type\": (string required) asset update type, can be (owner_uid, name, mint_amount)\n"
+            "4.\"update_value\": (string required) update the value specified by update_type, value format see the submitassetissuetx\n"
+            "5.\"symbol:fee:unit\":(string:numeric:string, optional) fee paid for miner, default is WICC:10000:sawi\n"
             "\nResult:\n"
             "\"txid\" (string) The new transaction id.\n"
             "\nExamples:\n"
-            + HelpExampleCli("submitassetupdatetx", "\"10-2\" \"CNY\" \"10-2\" \"RMB\" 100000000")
+            + HelpExampleCli("submitassetupdatetx", "\"10-2\" \"CNY\" \"mint_amount\" \"100000000\"")
             + "\nAs json rpc call\n"
-            + HelpExampleRpc("submitassetupdatetx", "\"10-2\" \"CNY\" \"10-2\" \"RMB\" 100000000")
+            + HelpExampleRpc("submitassetupdatetx", "\"10-2\" \"CNY\" \"mint_amount\" \"100000000\"")
         );
     }
 
     const CUserID& uid             = RPC_PARAM::GetUserId(params[0]);
     const TokenSymbol& assetSymbol = RPC_PARAM::GetAssetIssueSymbol(params[1]);
-    const CUserID& assetOwnerUid   = RPC_PARAM::GetUserId(params[2]);
-    const TokenName& assetName     = RPC_PARAM::GetAssetName(params[3]);
-    int64_t mintAmount             = params[4].get_int64();
-    if (mintAmount < 0 || (uint64_t)mintAmount > MAX_ASSET_TOTAL_SUPPLY)
-        throw JSONRPCError(RPC_INVALID_PARAMS,
-                           strprintf("asset min_amount=%lld can not < 0 or > %llu", mintAmount, MAX_ASSET_TOTAL_SUPPLY));
-    ComboMoney cmFee = RPC_PARAM::GetFee(params, 5, DEX_MARKET_SELL_ORDER_TX);
+    const string &updateTypeStr = params[2].get_str();
+    const Value &jsonUpdateValue = params[3].get_str();
+
+    auto pUpdateType = CAssetUpdateData::ParseUpdateType(updateTypeStr);
+    if (!pUpdateType)
+        throw JSONRPCError(RPC_INVALID_PARAMS, strprintf("Invalid update_type=%s", updateTypeStr));
+
+    CAssetUpdateData updateData;
+    switch(*pUpdateType) {
+        case CAssetUpdateData::OWNER_UID: {
+            const string &valueStr = jsonUpdateValue.get_str();
+            auto pNewOwnerUid = CUserID::ParseUserId(valueStr);
+            if (!pNewOwnerUid || pNewOwnerUid->IsEmpty()) {
+                throw JSONRPCError(RPC_INVALID_PARAMS, strprintf("invalid updated owner user id=%s",
+                    valueStr.size()));
+            }
+            updateData.Set(*pNewOwnerUid);
+            break;
+        }
+        case CAssetUpdateData::NAME: {
+            const string &valueStr = jsonUpdateValue.get_str();
+            if (valueStr.size() == 0 || valueStr.size() > MAX_ASSET_NAME_LEN) {
+                throw JSONRPCError(RPC_INVALID_PARAMS, strprintf("invalid asset name! empty, or length=%d greater than %d",
+                    valueStr.size(), MAX_ASSET_NAME_LEN));
+            }
+            updateData.Set(valueStr);
+            break;
+        }
+        case CAssetUpdateData::MINT_AMOUNT: {
+            uint64_t mintAmount;
+            if (jsonUpdateValue.type() == json_spirit::Value_type::int_type ) {
+                int64_t v = jsonUpdateValue.get_int64();
+                if (v < 0)
+                    throw JSONRPCError(RPC_INVALID_PARAMS, strprintf("invalid mint amount=%lld as uint64_t type",
+                        v, MAX_ASSET_NAME_LEN));
+                mintAmount = v;
+            } else if (jsonUpdateValue.type() == json_spirit::Value_type::str_type) {
+                const string &valueStr = jsonUpdateValue.get_str();
+                if (!ParseUint64(valueStr, mintAmount))
+                    throw JSONRPCError(RPC_INVALID_PARAMS, strprintf("invalid mint_amount=%s as uint64_t type",
+                        valueStr, MAX_ASSET_NAME_LEN));
+            } else
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid json value type: %s",
+                    JSON::GetValueTypeName(jsonUpdateValue.type())));
+
+            if (mintAmount == 0 || mintAmount > MAX_ASSET_TOTAL_SUPPLY)
+                throw JSONRPCError(RPC_INVALID_PARAMS, strprintf("Invalid asset mint_amount=%llu, cannot be 0, or greater than %llu",
+                    mintAmount, MAX_ASSET_TOTAL_SUPPLY));
+
+            updateData.Set(mintAmount);
+            break;
+        }
+        default: {
+            throw JSONRPCError(RPC_INVALID_PARAMS, strprintf("unsupported updated_key=%s", updateTypeStr));
+        }
+    }
+
+    ComboMoney cmFee = RPC_PARAM::GetFee(params, 4, TxType::ASSET_UPDATE_TX);
 
     // Get account for checking balance
     CAccount txAccount = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, uid);
@@ -886,8 +957,38 @@ Value submitassetupdatetx(const Array& params, bool fHelp) {
     RPC_PARAM::CheckAccountBalance(txAccount, SYMB::WICC, SUB_FREE, assetUpdateFee);
 
     int32_t validHeight = chainActive.Height();
-    CAssetUpdateTx tx(uid, validHeight, cmFee.symbol, cmFee.GetSawiAmount(), assetSymbol, assetOwnerUid, assetName,
-                      mintAmount);
+    CAssetUpdateTx tx(uid, validHeight, cmFee.symbol, cmFee.GetSawiAmount(), assetSymbol, updateData);
 
     return SubmitTx(uid, tx);
+}
+
+extern Value getassets(const Array& params, bool fHelp) {
+     if (fHelp || params.size() > 4) {
+        throw runtime_error(
+            "getassets\n"
+            "\nget all assets, include active orders by block height range.\n"
+            "\nArguments:\n"
+            "\nResult: a list of assets\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getassets", "")
+            + "\nAs json rpc call\n"
+            + HelpExampleRpc("getassets", "")
+        );
+    }
+
+    auto pGetter = pCdMan->pAssetCache->CreateUserAssetsGetter();
+    if (!pGetter || !pGetter->Execute()) {
+        throw JSONRPCError(RPC_INVALID_PARAMS, "get all user issued assets error!");
+    }
+
+    Array assetArray;
+    for (auto &item : pGetter->data_list) {
+        const auto &asset = item.second;
+        assetArray.push_back(asset.ToJson());
+    }
+
+    Object obj;
+    obj.push_back(Pair("count", (int64_t)pGetter->data_list.size()));
+    obj.push_back(Pair("assets", assetArray));
+    return obj;
 }

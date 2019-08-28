@@ -197,7 +197,7 @@ Value SysTestBase::CreateDelegateTx(const string &strAddress, const string &oper
         strFee = strprintf("%d", fees);
     }
 
-    const char *argv[] = {"rpctest", "votedelegatetx", (char *)strAddress.c_str(),
+    const char *argv[] = {"rpctest", "submitdelegatevotetx", (char *)strAddress.c_str(),
                           (char *)operVoteFund.c_str(), (char *)strFee.c_str()};
     int argc           = sizeof(argv) / sizeof(char *);
 
@@ -222,7 +222,7 @@ Value SysTestBase::CreateRegAppTx(const string &strAddress, const string &strScr
     string strHeight = strprintf("%d", height);
 
     const char *argv[] = {"rpctest",
-                          "deploycontracttx",
+                          "submitcontractdeploytx",
                           (char *)strAddress.c_str(),
                           (char *)filepath.c_str(),
                           (char *)strFee.c_str(),
@@ -435,7 +435,7 @@ Value SysTestBase::RegisterAccountTx(const std::string &addr, const int nfee) {
     ;
     string fee = strprintf("%ld", nCurFee);
 
-    const char *argv[] = {"rpctest", "registeraccounttx", caddr, (char *)fee.c_str()};
+    const char *argv[] = {"rpctest", "submitaccountregistertx", caddr, (char *)fee.c_str()};
     int argc           = sizeof(argv) / sizeof(char *);
 
     Value value;
@@ -463,7 +463,7 @@ Value SysTestBase::CallContractTx(const std::string &scriptid, const std::string
     string pmoney = strprintf("%ld", nMoney);
 
     const char *argv[] = {"rpctest",
-                          "callcontracttx",
+                          "submitcontractcalltx",
                           (char *)(addrs.c_str()),
                           (char *)(scriptid.c_str()),
                           (char *)pmoney.c_str(),
@@ -508,22 +508,6 @@ bool SysTestBase::IsAllTxInBlock() {
     if (CommandLineRPC_GetValue(argc, argv, value)) {
         value = find_value(value.get_obj(), "UnConfirmTx");
         if (0 == value.get_array().size()) return true;
-    }
-    return false;
-}
-
-bool SysTestBase::GetBlockHash(const int height, std::string &blockhash) {
-    char height[16] = {0};
-    sprintf(height, "%d", height);
-
-    const char *argv[] = {"rpctest", "getblockhash", height};
-    int argc           = sizeof(argv) / sizeof(char *);
-
-    Value value;
-    if (CommandLineRPC_GetValue(argc, argv, value)) {
-        blockhash = find_value(value.get_obj(), "txid").get_str();
-        LogPrint("test_miners", "GetBlockHash:%s\r\n", blockhash.c_str());
-        return true;
     }
     return false;
 }
@@ -725,12 +709,6 @@ bool SysTestBase::GetRegID(string &strAddr, CRegID &regId) {
     }
 
     regId = account.regid;
-    return true;
-}
-
-bool SysTestBase::GetTxOperateLog(const uint256 &txid, vector<CAccount> &vLog) {
-    if (!GetTxOperLog(txid, vLog)) return false;
-
     return true;
 }
 

@@ -44,7 +44,7 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
         READWRITE(candidateVotes);
@@ -55,7 +55,7 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss  << VARINT(nVersion) << uint8_t(nTxType) << VARINT(nValidHeight) << txUid
+            ss  << VARINT(nVersion) << uint8_t(nTxType) << VARINT(valid_height) << txUid
                 << candidateVotes << VARINT(llFees);
 
             sigHash = ss.GetHash();
@@ -65,11 +65,9 @@ public:
     }
 
     virtual uint256 GetHash() const { return ComputeSignatureHash(); }
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return {{SYMB::WICC, 0}}; }
     virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CDelegateVoteTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache);
     virtual Object ToJson(const CAccountDBCache &accountCache) const;
-    virtual bool GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds);
 
     virtual bool CheckTx(int height, CCacheWrapper &cw, CValidationState &state);
     virtual bool ExecuteTx(int height, int index, CCacheWrapper &cw, CValidationState &state);

@@ -25,10 +25,7 @@ bool CAccount::GetBalance(const TokenSymbol &tokenSymbol, const BalanceType bala
 }
 
 bool CAccount::OperateBalance(const TokenSymbol &tokenSymbol, const BalanceOpType opType, const uint64_t &value) {
-    if (!kCoinTypeSet.count(tokenSymbol)) {
-        assert(false && "Unsupported token symbol");
-        return false;
-    }
+
     CAccountToken &accountToken = tokens[tokenSymbol];
     switch (opType) {
         case ADD_FREE: {
@@ -170,12 +167,6 @@ uint64_t CAccount::GetVotedBcoins(const vector<CCandidateReceivedVote> &candidat
     return votes;
 }
 
-bool CAccount::RegIDIsMature() const {
-    return (!regid.IsEmpty()) &&
-           ((regid.GetHeight() == 0) ||
-            (chainActive.Height() - (int32_t)regid.GetHeight() > REG_ID_MATURITY));
-}
-
 CAccountToken CAccount::GetToken(const TokenSymbol &tokenSymbol) const {
     auto iter = tokens.find(tokenSymbol);
     if (iter != tokens.end())
@@ -214,7 +205,7 @@ Object CAccount::ToJsonObj() const {
     obj.push_back(Pair("keyid",             keyid.ToString()));
     obj.push_back(Pair("nickid",            nickid.ToString()));
     obj.push_back(Pair("regid",             regid.ToString()));
-    obj.push_back(Pair("regid_mature",      RegIDIsMature()));
+    obj.push_back(Pair("regid_mature",      regid.IsMature(chainActive.Height())));
     obj.push_back(Pair("owner_pubkey",      owner_pubkey.ToString()));
     obj.push_back(Pair("miner_pubkey",      miner_pubkey.ToString()));
     obj.push_back(Pair("tokens",            tokenMapObj));
@@ -264,7 +255,7 @@ bool CAccount::IsFcoinWithinRange(uint64_t nAddMoney) {
 
 bool CAccount::ProcessDelegateVotes(const vector<CCandidateVote> &candidateVotesIn,
                                     vector<CCandidateReceivedVote> &candidateVotesInOut, const uint32_t currHeight,
-                                    const CAccountDBCache *pAccountCache) {
+                                    const CAccountDBCache &accountCache, vector<CReceipt> &receipts) {
     if (currHeight < last_vote_height) {
         LogPrint("ERROR", "currHeight (%d) < last_vote_height (%d)", currHeight, last_vote_height);
         return false;
@@ -276,15 +267,15 @@ bool CAccount::ProcessDelegateVotes(const vector<CCandidateVote> &candidateVotes
         const CUserID &voteId = vote.GetCandidateUid();
         vector<CCandidateReceivedVote>::iterator itVote =
             find_if(candidateVotesInOut.begin(), candidateVotesInOut.end(),
-                    [&voteId, pAccountCache](const CCandidateReceivedVote &vote) {
+                    [&voteId, &accountCache](const CCandidateReceivedVote &vote) {
                         if (voteId.type() != vote.GetCandidateUid().type()) {
                             CAccount account;
                             if (voteId.type() == typeid(CRegID)) {
-                                pAccountCache->GetAccount(voteId, account);
+                                accountCache.GetAccount(voteId, account);
                                 return vote.GetCandidateUid() == account.owner_pubkey;
 
                             } else {  // vote.GetCandidateUid().type() == typeid(CPubKey)
-                                pAccountCache->GetAccount(vote.GetCandidateUid(), account);
+                                accountCache.GetAccount(vote.GetCandidateUid(), account);
                                 return account.owner_pubkey == voteId;
                             }
                         } else {
@@ -298,19 +289,19 @@ bool CAccount::ProcessDelegateVotes(const vector<CCandidateVote> &candidateVotes
                 uint64_t currVotes = itVote->GetVotedBcoins();
 
                 if (!IsBcoinWithinRange(vote.GetVotedBcoins()))
-                     return ERRORMSG("ProcessDelegateVotes() : oper fund value exceeds maximum ");
+                    return ERRORMSG("ProcessDelegateVotes() : oper fund value exceeds maximum ");
 
                 itVote->SetVotedBcoins(currVotes + vote.GetVotedBcoins());
 
                 if (!IsBcoinWithinRange(itVote->GetVotedBcoins()))
-                     return ERRORMSG("ProcessDelegateVotes() : fund value exceeds maximum");
+                    return ERRORMSG("ProcessDelegateVotes() : fund value exceeds maximum");
 
-            } else { //new vote
-               if (candidateVotesInOut.size() == IniCfg().GetMaxVoteCandidateNum()) {
-                   return ERRORMSG("ProcessDelegateVotes() : MaxVoteCandidateNum reached. Must revoke old votes 1st.");
-               }
+            } else {  // new vote
+                if (candidateVotesInOut.size() == IniCfg().GetMaxVoteCandidateNum()) {
+                    return ERRORMSG("ProcessDelegateVotes() : MaxVoteCandidateNum reached. Must revoke old votes 1st.");
+                }
 
-               candidateVotesInOut.push_back(vote);
+                candidateVotesInOut.push_back(vote);
             }
         } else if (MINUS_BCOIN == voteType) {
             // if (currHeight - last_vote_height < 100) {
@@ -346,17 +337,21 @@ bool CAccount::ProcessDelegateVotes(const vector<CCandidateVote> &candidateVotes
     });
 
     uint64_t newTotalVotes = GetVotedBcoins(candidateVotesInOut, currHeight);
-    uint64_t totalBcoins = GetToken(SYMB::WICC).free_amount + lastTotalVotes;
+    uint64_t totalBcoins   = GetToken(SYMB::WICC).free_amount + lastTotalVotes;
     if (totalBcoins < newTotalVotes) {
         return  ERRORMSG("ProcessDelegateVotes() : delegate votes exceeds account bcoins");
     }
-    uint64_t free_bcoins = totalBcoins - newTotalVotes;
 
+    uint64_t free_bcoins  = totalBcoins - newTotalVotes;
     uint64_t currBcoinAmt = GetToken(SYMB::WICC).free_amount;
     if (currBcoinAmt < free_bcoins) {
         OperateBalance(SYMB::WICC, BalanceOpType::ADD_FREE, free_bcoins - currBcoinAmt);
+        CReceipt receipt(nullId, regid, SYMB::WICC, free_bcoins - currBcoinAmt, "add free bcoins due to revoking votes");
+        receipts.push_back(receipt);
     } else {
         OperateBalance(SYMB::WICC, BalanceOpType::SUB_FREE, currBcoinAmt - free_bcoins);
+        CReceipt receipt(regid, nullId, SYMB::WICC, currBcoinAmt - free_bcoins, "sub free bcoins due to increasing votes");
+        receipts.push_back(receipt);
     }
 
     auto featureForkVersion          = GetFeatureForkVersion(currHeight);
@@ -365,14 +360,18 @@ bool CAccount::ProcessDelegateVotes(const vector<CCandidateVote> &candidateVotes
         return false;
 
     switch (featureForkVersion) {
-        case MAJOR_VER_R1: // for backward compatibility
+        case MAJOR_VER_R1: {  // for backward compatibility
             OperateBalance(SYMB::WICC, BalanceOpType::ADD_FREE, interestAmountToInflate);
+            CReceipt receipt(nullId, regid, SYMB::WICC, interestAmountToInflate, "inflate interest due to voting");
+            receipts.push_back(receipt);
             break;
-
-        case MAJOR_VER_R2: // only fcoins will be inflated for voters
+        }
+        case MAJOR_VER_R2: {  // only fcoins will be inflated for voters
             OperateBalance(SYMB::WGRT, BalanceOpType::ADD_FREE, interestAmountToInflate);
+            CReceipt receipt(nullId, regid, SYMB::WGRT, interestAmountToInflate, "inflate interest due to voting");
+            receipts.push_back(receipt);
             break;
-
+        }
         default:
             return false;
     }
@@ -429,11 +428,11 @@ bool CAccount::IsMyUid(const CUserID &uid) {
 
 Object CVmOperate::ToJson() {
     Object obj;
-    if (accountType == ACCOUNT_TYPE::REGID) {
+    if (accountType == AccountType::REGID) {
         vector<uint8_t> vRegId(accountId, accountId + 6);
         CRegID regId(vRegId);
         obj.push_back(Pair("regid", regId.ToString()));
-    } else if (accountType == ACCOUNT_TYPE::BASE58ADDR) {
+    } else if (accountType == AccountType::BASE58ADDR) {
         string addr(accountId, accountId + sizeof(accountId));
         obj.push_back(Pair("addr", addr));
     }

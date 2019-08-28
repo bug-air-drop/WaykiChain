@@ -413,9 +413,9 @@ bool AcceptToMemoryPool(CTxMemPool &pool, CValidationState &state, CBaseTx *pBas
 
     if (pBaseTx->nTxType == BCOIN_TRANSFER_TX) {
         CBaseCoinTransferTx *pTx = static_cast<CBaseCoinTransferTx *>(pBaseTx);
-        if (pTx->bcoins < CBaseTx::nDustAmountThreshold)
+        if (pTx->coin_amount < CBaseTx::nDustAmountThreshold)
             return state.DoS(0, ERRORMSG("AcceptToMemoryPool() : txid: %s transfer dust amount, %d < %d",
-                 hash.GetHex(), pTx->bcoins, CBaseTx::nDustAmountThreshold), REJECT_DUST, "dust amount");
+                 hash.GetHex(), pTx->coin_amount, CBaseTx::nDustAmountThreshold), REJECT_DUST, "dust amount");
     } else if (pBaseTx->nTxType == UCOIN_TRANSFER_TX) {
         CCoinTransferTx *pTx = static_cast<CCoinTransferTx *>(pBaseTx);
         if (pTx->coin_amount < CBaseTx::nDustAmountThreshold)
@@ -1155,7 +1155,8 @@ bool ComputeVoteStakingInterestAndRevokeVotes(const int32_t currHeight, CCacheWr
         cw.delegateCache.GetCandidateVotes(regId, candidateVotesInOut);
         CAccount account;
         cw.accountCache.GetAccount(regId, account);
-        if (!account.ProcessDelegateVotes(candidateVotes, candidateVotesInOut, currHeight, &cw.accountCache)) {
+        vector<CReceipt> receipts;
+        if (!account.ProcessDelegateVotes(candidateVotes, candidateVotesInOut, currHeight, cw.accountCache, receipts)) {
             return state.DoS(100, ERRORMSG("ComputeVoteStakingInterestAndRevokeVotes() : operate delegate vote failed, regId=%s",
                             regId.ToString()), UPDATE_ACCOUNT_FAIL, "operate-delegate-failed");
         }
@@ -1239,7 +1240,9 @@ bool ConnectBlock(CBlock &block, CCacheWrapper &cw, CBlockIndex *pIndex, CValida
                      block.vptx[index + 1]->GetHash().GetHex(), txids[index],
                      block.vptx[index + 1]->ToString(cw.accountCache));
             assert(block.vptx[index + 1]->nTxType == UCOIN_REWARD_TX);
-            assert(block.vptx[index + 1]->GetHash() == uint256S(txids[index]));
+            if (SysCfg().NetworkID() == MAIN_NET) {
+                assert(block.vptx[index + 1]->GetHash() == uint256S(txids[index]));
+            }
         }
     }
 
@@ -1918,7 +1921,7 @@ bool ProcessForkedChain(const CBlock &block, CBlockIndex *pPreBlockIndex, CValid
         pPreBlockIndex = pPreBlockIndex->pprev;
 
         // FIXME: enable it to avoid forked chain attack.
-        // if (chainActive.Tip()->height - pPreBlockIndex->height > SysCfg().GetMaxForkHeight())
+        // if (chainActive.Height() - pPreBlockIndex->height > SysCfg().GetMaxForkHeight())
         //     return state.DoS(100, ERRORMSG(
         //         "ProcessForkedChain() : block at fork chain too earlier than tip block hash=%s block height=%d\n",
         //         block.GetHash().GetHex(), block.GetHeight()));
@@ -2395,7 +2398,7 @@ bool ProcessBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock, CDiskBl
             // Ask this guy to fill in what we're missing
             LogPrint("net", "receive an orphan block height=%d hash=%s, %s it, leading to getblocks (current height=%d & orphan blocks=%d)\n",
                     pBlock->GetHeight(), pBlock->GetHash().GetHex(), success ? "keep" : "abandon",
-                    chainActive.Tip()->height, mapOrphanBlocksByPrev.size());
+                    chainActive.Height(), mapOrphanBlocksByPrev.size());
 
             PushGetBlocksOnCondition(pFrom, chainActive.Tip(), GetOrphanRoot(blockHash));
         }
@@ -3521,46 +3524,6 @@ string CBlockUndo::ToString() const {
 
 bool DisconnectBlockFromTip(CValidationState &state) {
     return DisconnectTip(state);
-}
-
-bool GetTxOperLog(const uint256 &txid, vector<CAccount> &accountLogs) {
-    if (SysCfg().IsTxIndex()) {
-        CDiskTxPos diskTxPos;
-        if (pCdMan->pContractCache->ReadTxIndex(txid, diskTxPos)) {
-            CAutoFile file(OpenBlockFile(diskTxPos, true), SER_DISK, CLIENT_VERSION);
-            CBlockHeader header;
-            try {
-                file >> header;
-            } catch (std::exception &e) {
-                return ERRORMSG("%s : Deserialize or I/O error - %s", __func__, e.what());
-            }
-            uint256 blockHash = header.GetHash();
-            if (mapBlockIndex.count(blockHash) > 0) {
-                CBlockIndex *pIndex = mapBlockIndex[blockHash];
-                CBlockUndo blockUndo;
-                CDiskBlockPos pos = pIndex->GetUndoPos();
-                if (pos.IsNull())
-                    return ERRORMSG("DisconnectBlock() : no undo data available");
-                if (!blockUndo.ReadFromDisk(pos, pIndex->pprev->GetBlockHash()))
-                    return ERRORMSG("DisconnectBlock() : failure reading undo data");
-
-                for (auto &txUndo : blockUndo.vtxundo) {
-                    if (txUndo.txid == txid) {
-                        auto accountLogsPtr = txUndo.dbOpLogMap.GetDbOpLogsPtr(dbk::KEYID_ACCOUNT);
-                        if (accountLogsPtr != nullptr) {
-                            for (auto accountLog : *accountLogsPtr) {
-                                CAccount account;
-                                accountLog.Get(account);
-                                accountLogs.push_back(account);
-                            }
-                        }
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-    return false;
 }
 
 bool EraseBlockIndexFromSet(CBlockIndex *pIndex) {

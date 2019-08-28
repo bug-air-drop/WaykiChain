@@ -44,7 +44,7 @@ public:
     int32_t nVersion;
     TxType nTxType;
     mutable CUserID txUid;
-    int32_t nValidHeight;
+    int32_t valid_height;
     TokenSymbol fee_symbol; // fee symbol, default is WICC, some tx (MAJOR_VER_R1) not serialize this field
     uint64_t llFees;
     UnsignedCharArray signature;
@@ -55,23 +55,23 @@ public:
 
 public:
     CBaseTx(int32_t nVersionIn, TxType nTxTypeIn, CUserID txUidIn, int32_t nValidHeightIn, uint64_t llFeesIn) :
-        nVersion(nVersionIn), nTxType(nTxTypeIn), txUid(txUidIn), nValidHeight(nValidHeightIn),
+        nVersion(nVersionIn), nTxType(nTxTypeIn), txUid(txUidIn), valid_height(nValidHeightIn),
         fee_symbol(SYMB::WICC), llFees(llFeesIn), nRunStep(0), nFuelRate(0) {}
 
     CBaseTx(TxType nTxTypeIn, CUserID txUidIn, int32_t nValidHeightIn, TokenSymbol feeSymbolIn, uint64_t llFeesIn) :
-        nVersion(CURRENT_VERSION), nTxType(nTxTypeIn), txUid(txUidIn), nValidHeight(nValidHeightIn),
+        nVersion(CURRENT_VERSION), nTxType(nTxTypeIn), txUid(txUidIn), valid_height(nValidHeightIn),
         fee_symbol(feeSymbolIn), llFees(llFeesIn), nRunStep(0), nFuelRate(0) {}
 
     CBaseTx(TxType nTxTypeIn, CUserID txUidIn, int32_t nValidHeightIn, uint64_t llFeesIn) :
-        nVersion(CURRENT_VERSION), nTxType(nTxTypeIn), txUid(txUidIn), nValidHeight(nValidHeightIn),
+        nVersion(CURRENT_VERSION), nTxType(nTxTypeIn), txUid(txUidIn), valid_height(nValidHeightIn),
         fee_symbol(SYMB::WICC), llFees(llFeesIn), nRunStep(0), nFuelRate(0) {}
 
     CBaseTx(int32_t nVersionIn, TxType nTxTypeIn) :
-        nVersion(nVersionIn), nTxType(nTxTypeIn), nValidHeight(0), fee_symbol(SYMB::WICC), llFees(0), nRunStep(0),
+        nVersion(nVersionIn), nTxType(nTxTypeIn), valid_height(0), fee_symbol(SYMB::WICC), llFees(0), nRunStep(0),
         nFuelRate(0) {}
 
     CBaseTx(TxType nTxTypeIn) :
-        nVersion(CURRENT_VERSION), nTxType(nTxTypeIn), nValidHeight(0), fee_symbol(SYMB::WICC), llFees(0), nRunStep(0),
+        nVersion(CURRENT_VERSION), nTxType(nTxTypeIn), valid_height(0), fee_symbol(SYMB::WICC), llFees(0), nRunStep(0),
         nFuelRate(0) {}
 
     virtual ~CBaseTx() {}
@@ -85,26 +85,31 @@ public:
     virtual double GetPriority() const {
         return kTransactionPriorityCeiling / GetSerializeSize(SER_NETWORK, PROTOCOL_VERSION);
     }
-    virtual map<TokenSymbol, uint64_t> GetValues() const = 0;
     virtual TxID ComputeSignatureHash(bool recalculate = false) const = 0;
     virtual std::shared_ptr<CBaseTx> GetNewInstance() const           = 0;
-
     virtual string ToString(CAccountDBCache &accountCache)           = 0;
     virtual Object ToJson(const CAccountDBCache &accountCache) const;
+
     virtual bool GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds);
 
     virtual bool CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state)                  = 0;
     virtual bool ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state) = 0;
 
     bool IsValidHeight(int32_t nCurHeight, int32_t nTxCacheHeight) const;
+
+    // If the sender has no regid before, geneate a regid for the sender.
+    bool GenerateRegID(CAccount &account, CCacheWrapper &cw, CValidationState &state, const int32_t height,
+                       const int32_t index);
+
     bool IsBlockRewardTx() { return nTxType == BLOCK_REWARD_TX || nTxType == UCOIN_BLOCK_REWARD_TX; }
     bool IsMedianPriceTx() { return nTxType == PRICE_MEDIAN_TX; }
     bool IsPriceFeedTx() { return nTxType == PRICE_FEED_TX; }
 
-    bool CheckCoinRange(TokenSymbol symbol, int64_t amount);
 protected:
     bool CheckTxFeeSufficient(const TokenSymbol &feeSymbol, const uint64_t llFees, const int32_t height) const;
     bool CheckSignatureSize(const vector<unsigned char> &signature) const;
+    bool CheckCoinRange(const TokenSymbol &symbol, const int64_t amount) const;
+
     static bool AddInvolvedKeyIds(vector<CUserID> uids, CCacheWrapper &cw, set<CKeyID> &keyIds);
 };
 
@@ -158,25 +163,25 @@ public:
 };
 
 #define IMPLEMENT_CHECK_TX_MEMO                                                                    \
-    if (memo.size() > MAX_COMMON_TX_MEMO_SIZE)                                                        \
+    if (memo.size() > MAX_COMMON_TX_MEMO_SIZE)                                                     \
         return state.DoS(100, ERRORMSG("%s, memo's size too large", __FUNCTION__), REJECT_INVALID, \
                          "memo-size-toolarge");
 
 #define IMPLEMENT_CHECK_TX_ARGUMENTS                                                                    \
-    if (arguments.size() > MAX_CONTRACT_ARGUMENT_SIZE)                                                    \
+    if (arguments.size() > MAX_CONTRACT_ARGUMENT_SIZE)                                                  \
         return state.DoS(100, ERRORMSG("%s, arguments's size too large, __FUNCTION__"), REJECT_INVALID, \
                          "arguments-size-toolarge");
 
-#define IMPLEMENT_CHECK_TX_FEE(feeSymbol)                                                              \
+#define IMPLEMENT_CHECK_TX_FEE                                                                         \
     if (!CheckBaseCoinRange(llFees))                                                                   \
         return state.DoS(100, ERRORMSG("%s, tx fee out of range", __FUNCTION__), REJECT_INVALID,       \
                          "bad-tx-fee-toolarge");                                                       \
-     if (!kFeeSymbolSet.count(feeSymbol))                                                              \
+     if (!kFeeSymbolSet.count(fee_symbol))                                                             \
         return state.DoS(100, ERRORMSG("%s, not support fee symbol=%s, only supports:%s",              \
-            __FUNCTION__, feeSymbol, GetFeeSymbolSetStr()), REJECT_INVALID, "bad-tx-fee-symbol");      \
-    if (!CheckTxFeeSufficient(feeSymbol, llFees, height)) {                                            \
+            __FUNCTION__, fee_symbol, GetFeeSymbolSetStr()), REJECT_INVALID, "bad-tx-fee-symbol");     \
+    if (!CheckTxFeeSufficient(fee_symbol, llFees, height)) {                                           \
         return state.DoS(100, ERRORMSG("%s, tx fee too small(height: %d, fee symbol: %s, fee: %llu",   \
-            __FUNCTION__, height, feeSymbol, llFees), REJECT_INVALID, "bad-tx-fee-toosmall");          \
+            __FUNCTION__, height, fee_symbol, llFees), REJECT_INVALID, "bad-tx-fee-toosmall");         \
     }
 
 #define IMPLEMENT_CHECK_TX_REGID(txUidType)                                                            \
