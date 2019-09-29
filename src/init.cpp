@@ -145,8 +145,11 @@ void Shutdown() {
             bitdb.Flush(true);
         }
 
-        pCdMan->Flush();
-        delete pCdMan;
+        if (pCdMan != nullptr) {
+            pCdMan->Flush();
+            delete pCdMan;
+            pCdMan = nullptr;
+        }
     }
 
     boost::filesystem::remove(GetPidFile());
@@ -166,11 +169,11 @@ void Shutdown() {
 //
 // Signal handlers are very limited in what they are allowed to do, so:
 //
-void HandleSIGTERM(int) {
+void HandleSIGTERM(int32_t) {
     fRequestShutdown = true;
 }
 
-void HandleSIGHUP(int) {
+void HandleSIGHUP(int32_t) {
     fReopenDebugLog = true;
 }
 
@@ -184,7 +187,7 @@ bool static InitWarning(const string &str) {
     return true;
 }
 
-bool static Bind(const CService &addr, unsigned int flags) {
+bool static Bind(const CService &addr, uint32_t flags) {
     if (!(flags & BF_EXPLICIT) && IsLimited(addr))
         return false;
     string strError;
@@ -209,13 +212,13 @@ string HelpMessage() {
     strUsage += "  -daemon                " + _("Run in the background as a daemon and accept commands") + "\n";
 #endif
     strUsage += "  -datadir=<dir>         " + _("Specify data directory") + "\n";
-    strUsage += "  -dbcache=<n>           " + strprintf(_("Set database cache size in megabytes (%d to %d, default: %d)"), nMinDbCache, nMaxDbCache, nDefaultDbCache) + "\n";
+    strUsage += "  -dbcache=<n>           " + strprintf(_("Set database cache size in megabytes (%d to %d, default: %d)"), MIN_DB_CACHE, MAX_DB_CACHE, DEFAULT_DB_CACHE) + "\n";
     strUsage += "  -loadblock=<file>      " + _("Imports blocks from external blk000??.dat file") + " " + _("on startup") + "\n";
-    strUsage += "  -par=<n>               " + strprintf(_("Set the number of script verification threads (%u to %d, 0 = auto, <0 = leave that many cores free, default: %d)"), -(int)boost::thread::hardware_concurrency(), MAX_SCRIPTCHECK_THREADS, DEFAULT_SCRIPTCHECK_THREADS) + "\n";
     strUsage += "  -pid=<file>            " + _("Specify pid file (default: coin.pid)") + "\n";
     strUsage += "  -reindex               " + _("Rebuild block chain index from current blk000??.dat files") + " " + _("on startup") + "\n";
     strUsage += "  -txindex               " + _("Maintain a full transaction index (default: 0)") + "\n";
     strUsage += "  -logfailures           " + _("Log failures into level db in detail (default: 0)") + "\n";
+    strUsage += "  -genreceipt               " + _("Whether generate receipt(default: 0)") + "\n";
 
     strUsage += "\n" + _("Connection options:") + "\n";
     strUsage += "  -addnode=<ip>          " + _("Add a node to connect to and attempt to keep the connection open") + "\n";
@@ -236,7 +239,7 @@ string HelpMessage() {
     strUsage += "  -onlynet=<net>         " + _("Only connect to nodes in network <net> (IPv4, IPv6 or Tor)") + "\n";
     strUsage += "  -port=<port>           " + _("Listen for connections on <port> (default: 8333 or testnet: 18333)") + "\n";
     strUsage += "  -proxy=<ip:port>       " + _("Connect through SOCKS proxy") + "\n";
-    strUsage += "  -reportip=<ip:port/uri>" + _("Report ip") + "\n";
+    strUsage += "  -ipuri=<ip:port/path>  " + _("IP Reporting Service URI") + "\n";
     strUsage += "  -seednode=<ip>         " + _("Connect to a node to retrieve peer addresses, and disconnect") + "\n";
     strUsage += "  -socks=<n>             " + _("Select SOCKS version for -proxy (4 or 5, default: 5)") + "\n";
     strUsage += "  -timeout=<n>           " + _("Specify connection timeout in milliseconds (default: 5000)") + "\n";
@@ -261,7 +264,6 @@ string HelpMessage() {
     strUsage += "  -upgradewallet         " + _("Upgrade wallet to latest format") + " " + _("on startup") + "\n";
     strUsage += "  -wallet=<file>         " + _("Specify wallet file (within data directory)") + " " + _("(default: wallet.dat)") + "\n";
     strUsage += "  -walletnotify=<cmd>    " + _("Execute command when a wallet transaction changes (%s in cmd is replaced by TxID)") + "\n";
-    strUsage += "  -zapwallettxes         " + _("Clear list of wallet transactions (diagnostic tool; implies -rescan)") + "\n";
 #endif
 
     strUsage += "\n" + _("Debugging/Testing options:") + "\n";
@@ -284,7 +286,6 @@ string HelpMessage() {
         strUsage += "  -limitfreerelay=<n>    " + _("Continuously rate-limit free transactions to <n>*1000 bytes per minute (default:15)") + "\n";
         strUsage += "  -maxsigcachesize=<n>   " + _("Limit size of signature cache to <n> entries (default: 50000)") + "\n";
     }
-    strUsage += "  -mintxfee=<amt>        " + _("Fees smaller than this are considered zero fee (for transaction creation) (default:") + " " + FormatMoney(CBaseTx::nMinTxFee) + ")" + "\n";
     strUsage += "  -minrelaytxfee=<amt>   " + _("Fees smaller than this are considered zero fee (for relaying) (default:") + " " + FormatMoney(CBaseTx::nMinRelayTxFee) + ")" + "\n";
     strUsage += "  -logprinttoconsole     " + _("Send trace/debug info to console instead of debug.log file") + "\n";
     if (SysCfg().GetBoolArg("-help-debug", false)) {
@@ -300,12 +301,10 @@ string HelpMessage() {
     strUsage += "  -testnet               " + _("Use the test network") + "\n";
 
     strUsage += "\n" + _("Block creation options:") + "\n";
-    strUsage += "  -blockminsize=<n>      " + _("Set minimum block size in bytes (default: 0)") + "\n";
     strUsage += "  -blockmaxsize=<n>      " + strprintf(_("Set maximum block size in bytes (default: %d)"), DEFAULT_BLOCK_MAX_SIZE) + "\n";
-    strUsage += "  -blockprioritysize=<n> " + strprintf(_("Set maximum size of high-priority/low-fee transactions in bytes (default: %d)"), DEFAULT_BLOCK_PRIORITY_SIZE) + "\n";
 
     strUsage += "\n" + _("RPC server options:") + "\n";
-    strUsage += "  -server                " + _("Accept command line and JSON-RPC commands") + "\n";
+    strUsage += "  -rpcserver             " + _("Accept command line and JSON-RPC commands") + "\n";
     strUsage += "  -rpcuser=<user>        " + _("Username for JSON-RPC connections") + "\n";
     strUsage += "  -rpcpassword=<pw>      " + _("Password for JSON-RPC connections") + "\n";
     strUsage += "  -rpcport=<port>        " + _("Listen for JSON-RPC connections on <port> (default: 8332 or testnet: 18332)") + "\n";
@@ -339,18 +338,18 @@ void ThreadImport(vector<boost::filesystem::path> vImportFiles) {
     // -reindex
     if (SysCfg().IsReindex()) {
         CImportingNow imp;
-        int nFile = 0;
+        int32_t nFile = 0;
         while (true) {
             CDiskBlockPos pos(nFile, 0);
             FILE *file = OpenBlockFile(pos, true);
             if (!file)
                 break;
 
-            LogPrint("INFO", "Reindexing block file blk%05u.dat...\n", (unsigned int)nFile);
+            LogPrint("INFO", "Reindexing block file blk%05u.dat...\n", (uint32_t)nFile);
             LoadExternalBlockFile(file, &pos);
             nFile++;
         }
-        pCdMan->pBlockTreeDb->WriteReindexing(false);
+        pCdMan->pBlockCache->WriteReindexing(false);
         SysCfg().SetReIndex(false);
         LogPrint("INFO", "Reindexing finished\n");
         // To avoid ending up in a situation without genesis block, re-try initializing (no-op if reindexing worked):
@@ -413,7 +412,7 @@ bool AppInit(boost::thread_group &threadGroup) {
 
     // Initialize Windows Sockets
     WSADATA wsadata;
-    int ret = WSAStartup(MAKEWORD(2, 2), &wsadata);
+    int32_t ret = WSAStartup(MAKEWORD(2, 2), &wsadata);
     if (ret != NO_ERROR || LOBYTE(wsadata.wVersion) != 2 || HIBYTE(wsadata.wVersion) != 2)
         return InitError(strprintf("Error: Winsock library failed to start (WSAStartup returned error %d)", ret));
 
@@ -492,18 +491,11 @@ bool AppInit(boost::thread_group &threadGroup) {
             LogPrint("INFO", "AppInit : parameter interaction: -salvagewallet=1 -> setting -rescan=1\n");
     }
 
-    // -zapwallettx implies a rescan
-    if (SysCfg().GetBoolArg("-zapwallettxes", false)) {
-        if (SysCfg().SoftSetBoolArg("-rescan", true)) {
-            LogPrint("INFO", "AppInit : parameter interaction: -zapwallettxes=1 -> setting -rescan=1\n");
-        }
-    }
-
     // Make sure enough file descriptors are available
-    int nBind       = max((int)SysCfg().IsArgCount("-bind"), 1);
+    int32_t nBind   = max((int32_t)SysCfg().IsArgCount("-bind"), 1);
     nMaxConnections = SysCfg().GetArg("-maxconnections", 125);
-    nMaxConnections = max(min(nMaxConnections, (int)(FD_SETSIZE - nBind - MIN_CORE_FILEDESCRIPTORS)), 0);
-    int nFD         = RaiseFileDescriptorLimit(nMaxConnections + MIN_CORE_FILEDESCRIPTORS);
+    nMaxConnections = max(min(nMaxConnections, (int32_t)(FD_SETSIZE - nBind - MIN_CORE_FILEDESCRIPTORS)), 0);
+    int32_t nFD     = RaiseFileDescriptorLimit(nMaxConnections + MIN_CORE_FILEDESCRIPTORS);
     if (nFD < MIN_CORE_FILEDESCRIPTORS)
         return InitError(_("Not enough file descriptors available."));
 
@@ -521,14 +513,6 @@ bool AppInit(boost::thread_group &threadGroup) {
     // a transaction spammer can cheaply fill blocks using
     // 1-satoshi-fee transactions. It should be set above the real
     // cost to you of processing a transaction.
-    if (SysCfg().IsArgCount("-mintxfee")) {
-        int64_t n = 0;
-        if (ParseMoney(SysCfg().GetArg("-mintxfee", ""), n) && n > 0) {
-            CBaseTx::nMinTxFee = n;
-        } else {
-            return InitError(strprintf(_("Invalid amount for -mintxfee=<amount>: '%s'"), SysCfg().GetArg("-mintxfee", "")));
-        }
-    }
     if (SysCfg().IsArgCount("-minrelaytxfee")) {
         int64_t n = 0;
         if (ParseMoney(SysCfg().GetArg("-minrelaytxfee", ""), n) && n > 0) {
@@ -591,7 +575,7 @@ bool AppInit(boost::thread_group &threadGroup) {
 
     RegisterNodeSignals(GetNodeSignals());
 
-    int nSocksVersion = SysCfg().GetArg("-socks", 5);
+    int32_t nSocksVersion = SysCfg().GetArg("-socks", 5);
     if (nSocksVersion != 4 && nSocksVersion != 5) {
         return InitError(strprintf(_("Unknown -socks proxy version requested: %i"), nSocksVersion));
     }
@@ -606,7 +590,7 @@ bool AppInit(boost::thread_group &threadGroup) {
             }
             nets.insert(net);
         }
-        for (int n = 0; n < NET_MAX; n++) {
+        for (int32_t n = 0; n < NET_MAX; n++) {
             enum Network net = (enum Network)n;
             if (!nets.count(net)) {
                 SetLimited(net);
@@ -702,40 +686,23 @@ bool AppInit(boost::thread_group &threadGroup) {
 
     SysCfg().SetLogFailures(SysCfg().GetBoolArg("-logfailures", false));
 
+    SysCfg().SetGenReceipt(SysCfg().GetBoolArg("-genreceipt", false));
+
     filesystem::path blocksDir = GetDataDir() / "blocks";
     if (!filesystem::exists(blocksDir)) {
         filesystem::create_directories(blocksDir);
     }
-
-    // cache size calculations
-    size_t nTotalCache = (SysCfg().GetArg("-dbcache", nDefaultDbCache) << 20);
-    if (nTotalCache < (nMinDbCache << 20))
-        nTotalCache = (nMinDbCache << 20);  // total cache cannot be less than nMinDbCache
-    else if (nTotalCache > (nMaxDbCache << 20))
-        nTotalCache = (nMaxDbCache << 20);  // total cache cannot be greater than nMaxDbCache
-    size_t nBlockTreeDBCache = nTotalCache / 8;
-    if (nBlockTreeDBCache > (1 << 21) && !SysCfg().GetBoolArg("-txindex", false))
-        nBlockTreeDBCache = (1 << 21);  // block tree db cache shouldn't be larger than 2 MiB
-    nTotalCache -= nBlockTreeDBCache;
-    size_t nAccountDBCache = nTotalCache / 2;  // use half of the remaining cache for coindb cache
-    nTotalCache -= nAccountDBCache;
-    size_t nContractDBCache = nTotalCache / 2;
-    nTotalCache -= nContractDBCache;
-    size_t nDelegateDBCache = nTotalCache / 2;
-    nTotalCache -= nDelegateDBCache;
-
-    SysCfg().SetViewCacheSize(nTotalCache / 300);  // coins in memory require around 300 bytes
 
     try {
         pWalletMain = CWallet::GetInstance();
         RegisterWallet(pWalletMain);
         pWalletMain->LoadWallet(false);
     } catch (std::exception &e) {
-        cout << "load wallet failed: " << e.what() << endl;
+        std::cout << "load wallet failed: " << e.what() << std::endl;
     }
 
     int64_t nStart = GetTimeMillis();
-    bool fLoaded = false;
+    bool fLoaded   = false;
     while (!fLoaded) {
         bool fReset = SysCfg().IsReindex();
         string strLoadError;
@@ -746,10 +713,9 @@ bool AppInit(boost::thread_group &threadGroup) {
                 delete pCdMan;
 
                 bool fReIndex = SysCfg().IsReindex();
-                pCdMan = new CCacheDBManager(fReIndex, false, nAccountDBCache, nContractDBCache, nDelegateDBCache,
-                                             nBlockTreeDBCache);
+                pCdMan = new CCacheDBManager(fReIndex, false);
                 if (fReIndex)
-                    pCdMan->pBlockTreeDb->WriteReindexing(true);
+                    pCdMan->pBlockCache->WriteReindexing(true);
 
                 mempool.SetMemPoolCache(pCdMan);
 
@@ -818,7 +784,7 @@ bool AppInit(boost::thread_group &threadGroup) {
 
     if (SysCfg().IsArgCount("-printblock")) {
         string strMatch = SysCfg().GetArg("-printblock", "");
-        int nFound      = 0;
+        int32_t nFound      = 0;
         for (map<uint256, CBlockIndex *>::iterator mi = mapBlockIndex.begin(); mi != mapBlockIndex.end(); ++mi) {
             uint256 hash = (*mi).first;
             if (strncmp(hash.ToString().c_str(), strMatch.c_str(), strMatch.size()) == 0) {
@@ -826,7 +792,7 @@ bool AppInit(boost::thread_group &threadGroup) {
                 CBlock block;
                 ReadBlockFromDisk(pIndex, block);
                 block.BuildMerkleTree();
-                block.Print(*pCdMan->pAccountCache);
+                block.Print(*pCdMan->pBlockCache);
                 LogPrint("INFO", "\n");
                 nFound++;
             }
@@ -842,35 +808,43 @@ bool AppInit(boost::thread_group &threadGroup) {
     if (!ActivateBestChain(state))
         return InitError("Failed to connect best block");
 
-    nStart                  = GetTimeMillis();
-    CBlockIndex *blockIndex = chainActive.Tip();
-    int nCacheHeight        = SysCfg().GetTxCacheHeight();
-    int nCount              = 0;
+    nStart                   = GetTimeMillis();
+    CBlockIndex *pBlockIndex = chainActive.Tip();
+    int32_t nCacheHeight     = SysCfg().GetTxCacheHeight();
+    int32_t nCount           = 0;
     CBlock block;
-    while (blockIndex && nCacheHeight-- > 0) {
-        if (!ReadBlockFromDisk(blockIndex, block))
+    while (pBlockIndex && nCacheHeight-- > 0) {
+        if (!ReadBlockFromDisk(pBlockIndex, block))
             return InitError("Failed to read block from disk");
 
         if (!pCdMan->pTxCache->AddBlockToCache(block))
             return InitError("Failed to add block to transaction memory cache");
 
-        blockIndex = blockIndex->pprev;
+        pBlockIndex = pBlockIndex->pprev;
         ++nCount;
     }
     LogPrint("INFO", "Added the latest %d blocks to transaction memory cache (%dms)\n", nCount, GetTimeMillis() - nStart);
 
     nStart       = GetTimeMillis();
-    blockIndex   = chainActive.Tip();
+    pBlockIndex  = chainActive.Tip();
     nCacheHeight = 11;  // TODO: parameterize 11.
     nCount       = 0;
-    while (blockIndex && nCacheHeight-- > 0) {
-        if (!ReadBlockFromDisk(blockIndex, block))
+
+
+    if (pBlockIndex) {
+        if (!ReadBlockFromDisk(pBlockIndex, block))
+            return InitError("Failed to read block from disk");
+        pCdMan->pPpCache->SetLatestBlockMedianPricePoints(block.GetBlockMedianPrice());
+    }
+
+    while (pBlockIndex && nCacheHeight-- > 0) {
+        if (!ReadBlockFromDisk(pBlockIndex, block))
             return InitError("Failed to read block from disk");
 
         if (!pCdMan->pPpCache->AddBlockToCache(block))
             return InitError("Failed to add block to price point memory cache");
 
-        blockIndex = blockIndex->pprev;
+        pBlockIndex = pBlockIndex->pprev;
         ++nCount;
     }
     LogPrint("INFO", "Added the latest %d blocks to price point memory cache (%dms)\n", nCount, GetTimeMillis() - nStart);

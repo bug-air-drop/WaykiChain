@@ -9,6 +9,7 @@
 
 #include <utility>
 #include <unordered_set>
+#include <unordered_map>
 
 // pair<> hash for unordered_set and unordered_map
 template <typename T1, typename T2>
@@ -21,5 +22,21 @@ struct UnorderedPairHash {
 // T1 and T2 must be the basic type(int, string ...)
 template <class T1, class T2, class _Hash = UnorderedPairHash<T1, T2>>
 using UnorderedPairSet = std::unordered_set<std::pair<T1, T2>, _Hash>;
+
+template <typename T, typename HashType = int32_t>
+struct EnumTypeHash {
+    size_t operator()(const T& type) const noexcept { return std::hash<HashType>{}((HashType)type); }
+};
+
+
+template <typename EnumType, typename ValueType, typename HashType = int32_t>
+using EnumTypeMap = std::unordered_map<EnumType, ValueType, EnumTypeHash<EnumType, HashType>>;
+
+namespace container {
+    template<typename Container>
+    void Append(Container &dest, const Container &appended) {
+        dest.insert(dest.end(), std::begin(appended), std::end(appended));
+    }
+};
 
 #endif //COMMONS_TYPES_H

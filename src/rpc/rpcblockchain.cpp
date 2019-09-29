@@ -11,7 +11,7 @@
 #include "commons/uint256.h"
 #include "config/configuration.h"
 #include "init.h"
-#include "json/json_spirit_value.h"
+#include "commons/json/json_spirit_value.h"
 #include "main.h"
 #include "rpc/core/rpcserver.h"
 #include "sync.h"
@@ -24,124 +24,84 @@ using namespace std;
 
 class CBaseCoinTransferTx;
 
-double GetDifficulty(const CBlockIndex* pBlockIndex) {
-    // Floating point number that is a multiple of the minimum difficulty,
-    // minimum difficulty = 1.0.
-    if (pBlockIndex == NULL) {
-        if (chainActive.Tip() == NULL)
-            return 1.0;
-        else
-            pBlockIndex = chainActive.Tip();
-    }
-
-    int nShift = (pBlockIndex->nBits >> 24) & 0xff;
-
-    double dDiff = (double)0x0000ffff / (double)(pBlockIndex->nBits & 0x00ffffff);
-
-    while (nShift < 29) {
-        dDiff *= 256.0;
-        nShift++;
-    }
-    while (nShift > 29) {
-        dDiff /= 256.0;
-        nShift--;
-    }
-
-    return dDiff;
-}
-
 Object BlockToJSON(const CBlock& block, const CBlockIndex* pBlockIndex) {
     Object result;
-    result.push_back(Pair("txid", block.GetHash().GetHex()));
+    result.push_back(Pair("block_hash",     block.GetHash().GetHex()));
     CMerkleTx txGen(block.vptx[0]);
     txGen.SetMerkleBranch(&block);
-    result.push_back(Pair("confirmations", (int)txGen.GetDepthInMainChain()));
-    result.push_back(Pair("size", (int)::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION)));
-    result.push_back(Pair("height", (int)block.GetHeight()));
-    result.push_back(Pair("version", block.GetVersion()));
-    result.push_back(Pair("merkle_root", block.GetMerkleRootHash().GetHex()));
-    result.push_back(Pair("tx_count", (int)block.vptx.size()));
+    result.push_back(Pair("confirmations",  (int32_t)txGen.GetDepthInMainChain()));
+    result.push_back(Pair("size",           (int32_t)::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION)));
+    result.push_back(Pair("height",         (int32_t)block.GetHeight()));
+    result.push_back(Pair("version",        block.GetVersion()));
+    result.push_back(Pair("merkle_root",    block.GetMerkleRootHash().GetHex()));
+    result.push_back(Pair("tx_count",       (int32_t)block.vptx.size()));
     Array txs;
-    for (const auto& ptx : block.vptx) txs.push_back(ptx->GetHash().GetHex());
-    result.push_back(Pair("tx", txs));
-    result.push_back(Pair("time", block.GetBlockTime()));
-    result.push_back(Pair("nonce", (uint64_t)block.GetNonce()));
-    // TODO: Fees
-    // CBlockRewardTx* pBlockRewardTx = (CBlockRewardTx*)block.vptx[0].get();
-    // uint64_t reward           = pBlockRewardTx->reward;
-    // int64_t fees                   = block.GetFees();
-    // int64_t fuel                   = block.GetFuel();
-    // uint64_t profits               = reward - (fees - fuel);
-    // result.push_back(Pair("fuel", (int)block.GetFuel()));
-    // result.push_back(Pair("fuel_rate", block.GetFuelRate()));
-    // result.push_back(Pair("profits", profits));
-    // result.push_back(Pair("fees", fees));
-    if (pBlockIndex->pprev) result.push_back(Pair("previous_block_hash", pBlockIndex->pprev->GetBlockHash().GetHex()));
+    for (const auto& ptx : block.vptx)
+        txs.push_back(ptx->GetHash().GetHex());
+    result.push_back(Pair("tx",             txs));
+    result.push_back(Pair("time",           block.GetBlockTime()));
+    result.push_back(Pair("nonce",          (uint64_t)block.GetNonce()));
+
+    if (pBlockIndex->pprev)
+        result.push_back(Pair("previous_block_hash", pBlockIndex->pprev->GetBlockHash().GetHex()));
     CBlockIndex* pNext = chainActive.Next(pBlockIndex);
-    if (pNext) result.push_back(Pair("next_block_hash", pNext->GetBlockHash().GetHex()));
+    if (pNext)
+        result.push_back(Pair("next_block_hash", pNext->GetBlockHash().GetHex()));
 
     Array prices;
-    if (block.vptx.size() > 1 && block.vptx[1]->nTxType == PRICE_MEDIAN_TX) {
-        map<CoinPricePair, uint64_t> mapMedianPricePoints = ((CBlockPriceMedianTx*)block.vptx[1].get())->GetMedianPrice();
-        for (auto &item : mapMedianPricePoints) {
-            Object price;
-            price.push_back(Pair("coin_symbol",   item.first.first));
-            price.push_back(Pair("price_symbol",  item.first.second));
-            price.push_back(Pair("price",         item.second));
-            prices.push_back(price);
+    for (auto &item : block.GetBlockMedianPrice()) {
+        if (item.second == 0) {
+            continue;
         }
+
+        Object price;
+        price.push_back(Pair("coin_symbol",   item.first.first));
+        price.push_back(Pair("price_symbol",  item.first.second));
+        price.push_back(Pair("price",         (double) item.second / PRICE_BOOST));
+        prices.push_back(price);
     }
     result.push_back(Pair("median_price", prices));
 
     return result;
 }
 
-Value getblockcount(const Array& params, bool fHelp)
-{
+Value getblockcount(const Array& params, bool fHelp) {
     if (fHelp || params.size() != 0)
         throw runtime_error(
             "getblockcount\n"
             "\nReturns the number of blocks in the longest chain.\n"
             "\nResult:\n"
             "\n    (numeric) The current block count\n"
-            "\nExamples:\n"
-            + HelpExampleCli("getblockcount", "")
-            + HelpExampleRpc("getblockcount", "")
-        );
+            "\nExamples:\n" +
+            HelpExampleCli("getblockcount", "") + "\nAs json rpc\n" + HelpExampleRpc("getblockcount", ""));
 
     return chainActive.Height();
 }
 
-Value getbestblockhash(const Array& params, bool fHelp)
-{
-    if (fHelp || params.size() != 0)
-        throw runtime_error(
-            "getbestblockhash\n"
-            "\nReturns the hash of the best (tip) block in the longest block chain.\n"
-            "\nResult\n"
-            "\"hex\"      (string) the block hash hex encoded\n"
-            "\nExamples\n"
-            + HelpExampleCli("getbestblockhash", "")
-            + HelpExampleRpc("getbestblockhash", "")
-        );
+Value getfcoingenesistxinfo(const Array& params, bool fHelp) {
+    Object output;
 
-    return chainActive.Tip()->GetBlockHash().GetHex();
-}
+    NET_TYPE netType = SysCfg().NetworkID();
+    uint32_t nStableCoinGenesisHeight           = IniCfg().GetStableCoinGenesisHeight(netType);
 
-Value getdifficulty(const Array& params, bool fHelp)
-{
-    if (fHelp || params.size() != 0)
-        throw runtime_error(
-            "getdifficulty\n"
-            "\nReturns the proof-of-work difficulty as a multiple of the minimum difficulty.\n"
-            "\nResult:\n"
-            "n.nnn       (numeric) the proof-of-work difficulty as a multiple of the minimum difficulty.\n"
-            "\nExamples:\n"
-            + HelpExampleCli("getdifficulty", "")
-            + HelpExampleRpc("getdifficulty", "")
-        );
+    // Stablecoin Global Reserve Account with its initial reseve creation
+    auto pTx      = std::make_shared<CCoinRewardTx>(CNullID(), nStableCoinGenesisHeight, SYMB::WUSD,
+                                               FUND_COIN_GENESIS_INITIAL_RESERVE_AMOUNT * COIN);
+    pTx->nVersion = INIT_TX_VERSION;
+    output.push_back(Pair("fcoin_global_account_txid", pTx->GetHash().GetHex()));
 
-    return 0;//GetDifficulty();
+    // FundCoin Genesis Account with the total FundCoin release creation
+    pTx = std::make_shared<CCoinRewardTx>(CPubKey(ParseHex(IniCfg().GetInitFcoinOwnerPubKey(netType))),
+                                          nStableCoinGenesisHeight, SYMB::WGRT,
+                                          FUND_COIN_GENESIS_TOTAL_RELEASE_AMOUNT * COIN);
+    output.push_back(Pair("fcoin_genesis_account_txid", pTx->GetHash().GetHex()));
+
+    // DEX Order Matching Service Account
+    pTx = std::make_shared<CCoinRewardTx>(CPubKey(ParseHex(IniCfg().GetDexMatchServicePubKey(netType))),
+                                          nStableCoinGenesisHeight, SYMB::WGRT, 0);
+    output.push_back(Pair("dex_match_account_txid", pTx->GetHash().GetHex()));
+
+    return output;
 }
 
 Value getrawmempool(const Array& params, bool fHelp)
@@ -151,7 +111,8 @@ Value getrawmempool(const Array& params, bool fHelp)
             "getrawmempool ( verbose )\n"
             "\nReturns all transaction ids in memory pool as a json or an array of string transaction ids.\n"
             "\nArguments:\n"
-            "1. verbose           (boolean, optional, default=false) true for a json object, false for array of transaction ids\n"
+            "1. verbose           (boolean, optional, default=false) true for a json object, false for array of "
+            "transaction ids\n"
             "\nResult: (for verbose = false):\n"
             "[                     (json array of string)\n"
             "  \"txid\"     (string) The transaction id\n"
@@ -163,15 +124,13 @@ Value getrawmempool(const Array& params, bool fHelp)
             "    \"fee\" : n,              (numeric) transaction fee in WICC coins\n"
             "    \"size\" : n,             (numeric) transaction size in bytes\n"
             "    \"priority\" : n,         (numeric) priority\n"
-            "    \"time\" : n,             (numeric) local time transaction entered pool in seconds since 1 Jan 1970 GMT\n"
+            "    \"time\" : n,             (numeric) local time transaction entered pool in seconds since 1 Jan 1970 "
+            "GMT\n"
             "    \"height\" : n,           (numeric) block height when transaction entered pool\n"
             "  }, ...\n"
             "]\n"
-            "\nExamples\n"
-            + HelpExampleCli("getrawmempool", "")
-            + HelpExampleCli("getrawmempool", "false")
-            + HelpExampleRpc("getrawmempool", "true")
-        );
+            "\nExamples\n" +
+            HelpExampleCli("getrawmempool", "true") + "\nAs json rpc\n" + HelpExampleRpc("getrawmempool", "true"));
 
     bool fVerbose = false;
     if (params.size() > 0)
@@ -207,40 +166,17 @@ Value getrawmempool(const Array& params, bool fHelp)
     }
 }
 
-Value getblockhash(const Array& params, bool fHelp)
-{
-    if (fHelp || params.size() != 1) {
-        throw runtime_error("getblockhash index\n"
-            "\nReturns hash of block in best-block-chain at index provided.\n"
-            "\nArguments:\n"
-            "1. height         (numeric, required) The block height\n"
-            "\nResult:\n"
-            "\"hash\"         (string) The block hash\n"
-            "\nExamples:\n"
-            + HelpExampleRpc("getblockhash", "1000"));
-    }
-
-    RPCTypeCheck(params, boost::assign::list_of(int_type));
-
-    int height = params[0].get_int();
-    if (height < 0 || height > chainActive.Height())
-        throw runtime_error("Block number out of range");
-
-    CBlockIndex* pBlockIndex = chainActive[height];
-    Object result;
-    result.push_back(Pair("txid", pBlockIndex->GetBlockHash().GetHex()));
-    return result;
-}
-
-Value getblock(const Array& params, bool fHelp)
-{
+Value getblock(const Array& params, bool fHelp) {
     if (fHelp || params.size() < 1 || params.size() > 2) {
-        throw runtime_error("getblock \"hash or height\" ( verbose )\n"
+        throw runtime_error(
+            "getblock \"hash or height\" [\"verbose\"]\n"
             "\nIf verbose is false, returns a string that is serialized, hex-encoded data for block 'hash'.\n"
             "If verbose is true, returns an Object with information about block <hash>.\n"
             "\nArguments:\n"
-            "1. \"hash or height\"(string or numeric,required) string for the block hash, or numeric for the block height\n"
-            "2. verbose           (boolean, optional, default=true) true for a json object, false for the hex encoded data\n"
+            "1.\"hash or height\"   (string or numeric, required) string for the block hash, or numeric for the block "
+            "height\n"
+            "2.\"verbose\"          (boolean, optional, default=true) true for a json object, false for the hex "
+            "encoded data\n"
             "\nResult (for verbose = true):\n"
             "{\n"
             "  \"hash\" : \"hash\",     (string) the block hash (same as provided)\n"
@@ -263,9 +199,10 @@ Value getblock(const Array& params, bool fHelp)
             "}\n"
             "\nResult (for verbose=false):\n"
             "\"data\"             (string) A string that is serialized, hex-encoded data for block 'hash'.\n"
-            "\nExamples:\n"
-            + HelpExampleCli("getblock", "\"1000\"")
-            + HelpExampleRpc("getblock", "\"00000000c937983704a73af28acdec37b049d214adbda81d7e2a3dd146f6ed09\""));
+            "\nExamples:\n" +
+            HelpExampleCli("getblock", "\"d640d051704155b1fd3ec8d0331497448c259b0ab0499e109da7ae2bc7423bc2\"") +
+            "\nAs json rpc\n" +
+            HelpExampleRpc("getblock", "\"d640d051704155b1fd3ec8d0331497448c259b0ab0499e109da7ae2bc7423bc2\""));
     }
 
     // RPCTypeCheck(params, boost::assign::list_of(str_type)(bool_type)); disable this to allow either string or int argument
@@ -306,20 +243,18 @@ Value getblock(const Array& params, bool fHelp)
     return BlockToJSON(block, pBlockIndex);
 }
 
-Value verifychain(const Array& params, bool fHelp)
-{
+Value verifychain(const Array& params, bool fHelp) {
     if (fHelp || params.size() > 2) {
         throw runtime_error(
             "verifychain ( checklevel numofblocks )\n"
             "\nVerifies blockchain database.\n"
             "\nArguments:\n"
-            "1. checklevel   (numeric, optional, 0-4, default=3) How thorough the block verification is.\n"
-            "2. numofblocks    (numeric, optional, default=1288, 0=all) The number of blocks to check.\n"
+            "1.\"checklevel\"   (numeric, optional, 0-4, default=3) How thorough the block verification is.\n"
+            "2.\"numofblocks\"  (numeric, optional, default=1288, 0=all) The number of blocks to check.\n"
             "\nResult:\n"
             "true|false       (boolean) Verified Okay or not\n"
-            "\nExamples:\n"
-            + HelpExampleCli("verifychain", "")
-            + HelpExampleRpc("verifychain", "( 4 10000 )"));
+            "\nExamples:\n" +
+            HelpExampleCli("verifychain", "") + "\nAs json rpc\n" + HelpExampleRpc("verifychain", "4, 10000"));
     }
 
     int nCheckLevel = SysCfg().GetArg("-checklevel", 3);
@@ -332,51 +267,23 @@ Value verifychain(const Array& params, bool fHelp)
     return VerifyDB(nCheckLevel, nCheckDepth);
 }
 
-Value getblockchaininfo(const Array& params, bool fHelp)
-{
-    if (fHelp || params.size() != 0) {
-        throw runtime_error("getblockchaininfo\n"
-            "Returns an object containing various state info regarding block chain processing.\n"
-            "\nResult:\n"
-            "{\n"
-            "  \"chain\": \"xxxx\",        (string) current chain (main, testnet3, regtest)\n"
-            "  \"blocks\": xxxxxx,         (numeric) the current number of blocks processed in the server\n"
-            "  \"bestblockhash\": \"...\", (string) the hash of the currently best block\n"
-            "  \"difficulty\": xxxxxx,     (numeric) the current difficulty\n"
-            "  \"verificationprogress\": xxxx, (numeric) estimate of verification progress [0..1]\n"
-            "}\n"
-            "\nExamples:\n"
-            + HelpExampleRpc("getblockchaininfo", ""));
-    }
-
-    proxyType proxy;
-    GetProxy(NET_IPV4, proxy);
-
-    Object obj;
-    std::string chain = SysCfg().DataDir();
-    if(chain.empty()) chain = "main";
-    obj.push_back(Pair("chain",         chain));
-    obj.push_back(Pair("blocks",        (int)chainActive.Height()));
-    obj.push_back(Pair("bestblockhash", chainActive.Tip()->GetBlockHash().GetHex()));
-    return obj;
-}
-
-Value getcontractregid(const Array& params, bool fHelp)
-{
+Value getcontractregid(const Array& params, bool fHelp) {
     if (fHelp || params.size() != 1) {
-        throw runtime_error("getcontractregid \n"
+        throw runtime_error(
+            "getcontractregid\n"
             "\nreturn an object with regid\n"
             "\nArguments:\n"
             "1. txid   (string, required) the contract registration txid.\n"
             "\nResult:\n"
-            "\nExamples:\n"
-            + HelpExampleRpc("getcontractregid", "5zQPcC1YpFMtwxiH787pSXanUECoGsxUq3KZieJxVG"));
+            "\nExamples:\n" +
+            HelpExampleCli("getcontractregid", "\"wNw1Rr8cHPerXXGt6yxEkAPHDXmzMiQBn4\"") + "\nAs json rpc\n" +
+            HelpExampleRpc("getcontractregid", "\"wNw1Rr8cHPerXXGt6yxEkAPHDXmzMiQBn4\""));
     }
 
     uint256 txid(uint256S(params[0].get_str()));
 
     int index = 0;
-    int nBlockHeight = GetTxConfirmHeight(txid, *pCdMan->pContractCache);
+    int nBlockHeight = GetTxConfirmHeight(txid, *pCdMan->pBlockCache);
     if (nBlockHeight > chainActive.Height()) {
         throw runtime_error("height bigger than tip block");
     } else if (-1 == nBlockHeight) {
@@ -491,28 +398,30 @@ void static CommonTxGenerator(const int64_t period, const int64_t batchSize) {
     // remove key from wallet first.
     {
         LOCK2(cs_main, pWalletMain->cs_wallet);
-        if (!pWalletMain->RemoveKey(key)) throw boost::thread_interrupted();
+        if (!pWalletMain->RemoveKey(key))
+            throw boost::thread_interrupted();
     }
 
     CRegID srcRegId("0-1");
     CRegID desRegId("0-1");
     static uint64_t llValue = 10000;  // use static variable to keep autoincrement
-    uint64_t llFees         = SysCfg().GetTxFee();
+    uint64_t llFees         = 0;
+    GetTxMinFee(BCOIN_TRANSFER_TX, chainActive.Height(), SYMB::WICC, llFees);
 
     while (true) {
         // add interruption point
         boost::this_thread::interruption_point();
 
-        int64_t nStart       = GetTimeMillis();
-        int32_t nValidHeight = chainActive.Tip()->height;
+        int64_t nStart      = GetTimeMillis();
+        int32_t validHeight = chainActive.Height();
 
         for (int64_t i = 0; i < batchSize; ++i) {
             CBaseCoinTransferTx tx;
             tx.txUid        = srcRegId;
             tx.toUid        = desRegId;
-            tx.bcoins       = llValue++;
+            tx.coin_amount  = llValue++;
             tx.llFees       = llFees;
-            tx.nValidHeight = nValidHeight;
+            tx.valid_height = validHeight;
 
             // sign transaction
             key.Sign(tx.ComputeSignatureHash(), tx.signature);
@@ -521,9 +430,8 @@ void static CommonTxGenerator(const int64_t period, const int64_t batchSize) {
         }
 
         int64_t elapseTime = GetTimeMillis() - nStart;
-        LogPrint("DEBUG",
-                 "CommonTxGenerator, batch generate transaction(s): %ld, elapse time: %ld ms.\n",
-                 batchSize, elapseTime);
+        LogPrint("DEBUG", "CommonTxGenerator, batch generate transaction(s): %ld, elapse time: %ld ms.\n", batchSize,
+                 elapseTime);
         if (elapseTime < period) {
             MilliSleep(period - elapseTime);
         } else {
@@ -546,8 +454,7 @@ void static CommonTxSender() {
         if (generationQueue.get()->Pop(&tx)) {
             LOCK(cs_main);
             if (!::AcceptToMemoryPool(mempool, state, (CBaseTx*)&tx, true)) {
-                LogPrint("ERROR", "CommonTxSender, accept to mempool failed: %s\n",
-                         state.GetRejectReason());
+                LogPrint("ERROR", "CommonTxSender, accept to mempool failed: %s\n", state.GetRejectReason());
                 throw boost::thread_interrupted();
             }
         }
@@ -555,15 +462,16 @@ void static CommonTxSender() {
 }
 
 void StartCommonGeneration(const int64_t period, const int64_t batchSize) {
-    static boost::thread_group* generateThreads = NULL;
+    static boost::thread_group* generateThreads = nullptr;
 
-    if (generateThreads != NULL) {
+    if (generateThreads != nullptr) {
         generateThreads->interrupt_all();
         delete generateThreads;
-        generateThreads = NULL;
+        generateThreads = nullptr;
     }
 
-    if (period == 0 || batchSize == 0) return;
+    if (period == 0 || batchSize == 0)
+        return;
 
     // reset message queue according to <period, batchSize>
     // For example, generate 50(batchSize) transactions in 20(period), then
@@ -616,8 +524,7 @@ Value startcommontpstest(const Array& params, bool fHelp) {
 
 static unique_ptr<MsgQueue<CLuaContractInvokeTx>> generationContractQueue;
 
-void static ContractTxGenerator(const string& regid, const int64_t period,
-                                const int64_t batchSize) {
+void static ContractTxGenerator(const string& regid, const int64_t period, const int64_t batchSize) {
     RenameThread("Tx-generator-v2");
     SetThreadPriority(THREAD_PRIORITY_NORMAL);
 
@@ -628,33 +535,35 @@ void static ContractTxGenerator(const string& regid, const int64_t period,
     // remove key from wallet first.
     {
         LOCK2(cs_main, pWalletMain->cs_wallet);
-        if (!pWalletMain->RemoveKey(key)) throw boost::thread_interrupted();
+        if (!pWalletMain->RemoveKey(key))
+            throw boost::thread_interrupted();
     }
 
     CRegID txUid("0-1");
     CRegID appUid(regid);
     static uint64_t llValue = 10000;  // use static variable to keep autoincrement
-    uint64_t llFees         = 10 * SysCfg().GetTxFee();
+    uint64_t llFees         = 0;
+    GetTxMinFee(LCONTRACT_INVOKE_TX, chainActive.Height(), SYMB::WICC, llFees);
+
     // hex(whmD4M8Q8qbEx6R5gULbcb5ZkedbcRDGY1) =
     // 77686d44344d3851387162457836523567554c626362355a6b656462635244475931
-    string arguments =
-        ParseHexStr("77686d44344d3851387162457836523567554c626362355a6b656462635244475931");
+    string arguments = ParseHexStr("77686d44344d3851387162457836523567554c626362355a6b656462635244475931");
 
     while (true) {
         // add interruption point
         boost::this_thread::interruption_point();
 
-        int64_t nStart       = GetTimeMillis();
-        int32_t nValidHeight = chainActive.Tip()->height;
+        int64_t nStart      = GetTimeMillis();
+        int32_t validHeight = chainActive.Height();
 
         for (int64_t i = 0; i < batchSize; ++i) {
             CLuaContractInvokeTx tx;
             tx.txUid        = txUid;
             tx.app_uid      = appUid;
-            tx.bcoins       = llValue++;
+            tx.coin_amount  = llValue++;
             tx.llFees       = llFees;
             tx.arguments    = arguments;
-            tx.nValidHeight = nValidHeight;
+            tx.valid_height = validHeight;
 
             // sign transaction
             key.Sign(tx.ComputeSignatureHash(), tx.signature);
@@ -663,9 +572,8 @@ void static ContractTxGenerator(const string& regid, const int64_t period,
         }
 
         int64_t elapseTime = GetTimeMillis() - nStart;
-        LogPrint("DEBUG",
-                 "ContractTxGenerator, batch generate transaction(s): %ld, elapse time: %ld ms.\n",
-                 batchSize, elapseTime);
+        LogPrint("DEBUG", "ContractTxGenerator, batch generate transaction(s): %ld, elapse time: %ld ms.\n", batchSize,
+                 elapseTime);
         if (elapseTime < period) {
             MilliSleep(period - elapseTime);
         } else {
@@ -688,8 +596,7 @@ void static ContractTxGenerator() {
         if (generationContractQueue.get()->Pop(&tx)) {
             LOCK(cs_main);
             if (!::AcceptToMemoryPool(mempool, state, (CBaseTx*)&tx, true)) {
-                LogPrint("ERROR", "ContractTxGenerator, accept to mempool failed: %s\n",
-                         state.GetRejectReason());
+                LogPrint("ERROR", "ContractTxGenerator, accept to mempool failed: %s\n", state.GetRejectReason());
                 throw boost::thread_interrupted();
             }
         }
@@ -697,28 +604,27 @@ void static ContractTxGenerator() {
 }
 
 void StartContractGeneration(const string& regid, const int64_t period, const int64_t batchSize) {
-    static boost::thread_group* generateContractThreads = NULL;
+    static boost::thread_group* generateContractThreads = nullptr;
 
-    if (generateContractThreads != NULL) {
+    if (generateContractThreads != nullptr) {
         generateContractThreads->interrupt_all();
         delete generateContractThreads;
-        generateContractThreads = NULL;
+        generateContractThreads = nullptr;
     }
 
-    if (regid.empty() || period == 0 || batchSize == 0) return;
+    if (regid.empty() || period == 0 || batchSize == 0)
+        return;
 
     // reset message queue according to <period, batchSize>
     // For example, generate 50(batchSize) transactions in 20(period), then
     // we need to prepare 1000 * 10 / 20 * 50 = 25,000 transactions in 10 second.
     // Actually, set the message queue's size to 50,000(double or up to 60,000).
-    MsgQueue<CLuaContractInvokeTx>::SizeType size = 1000 * 10 * batchSize * 2 / period;
-    MsgQueue<CLuaContractInvokeTx>::SizeType actualSize =
-        size > MSG_QUEUE_MAX_LEN ? MSG_QUEUE_MAX_LEN : size;
+    MsgQueue<CLuaContractInvokeTx>::SizeType size       = 1000 * 10 * batchSize * 2 / period;
+    MsgQueue<CLuaContractInvokeTx>::SizeType actualSize = size > MSG_QUEUE_MAX_LEN ? MSG_QUEUE_MAX_LEN : size;
     generationContractQueue.reset(new MsgQueue<CLuaContractInvokeTx>(actualSize));
 
     generateContractThreads = new boost::thread_group();
-    generateContractThreads->create_thread(
-        boost::bind(&ContractTxGenerator, regid, period, batchSize));
+    generateContractThreads->create_thread(boost::bind(&ContractTxGenerator, regid, period, batchSize));
     generateContractThreads->create_thread(boost::bind(&ContractTxGenerator));
 }
 

@@ -5,163 +5,37 @@
 
 #include "cdpdb.h"
 
-#include "entities/id.h"
-#include "main.h"
+CCdpDBCache::CCdpDBCache(CDBAccess *pDbAccess)
+    : globalStakedBcoinsCache(pDbAccess),
+      globalOwedScoinsCache(pDbAccess),
+      cdpCache(pDbAccess),
+      regId2CDPCache(pDbAccess),
+      ratioCDPIdCache(pDbAccess) {}
 
-#include <cstdint>
+CCdpDBCache::CCdpDBCache(CCdpDBCache *pBaseIn)
+    : globalStakedBcoinsCache(pBaseIn->globalStakedBcoinsCache),
+      globalOwedScoinsCache(pBaseIn->globalOwedScoinsCache),
+      cdpCache(pBaseIn->cdpCache),
+      regId2CDPCache(pBaseIn->regId2CDPCache),
+      ratioCDPIdCache(pBaseIn->ratioCDPIdCache) {}
 
-bool CCdpMemCache::LoadAllCdpFromDB() {
-    assert(pAccess != nullptr);
-    map<std::pair<string, string>, CUserCDP> rawCdps;
-
-    if (!pAccess->GetAllElements(dbk::CDP, rawCdps)) {
-        // TODO: log
-        return false;
-    }
-
-    for (const auto & item: rawCdps) {
-        static uint8_t valid = 1; // 0: invalid; 1: valid
-
-        cdps.emplace(item.second, valid);
-        total_staked_bcoins += item.second.total_staked_bcoins;
-        total_owed_scoins += item.second.total_owed_scoins;
-    }
-
-    return true;
+bool CCdpDBCache::NewCDP(const int32_t blockHeight, CUserCDP &cdp) {
+    assert(!cdpCache.HaveData(cdp.cdpid));
+    return SaveCDPToDB(cdp) && SaveCDPToRatioDB(cdp);
 }
 
-void CCdpMemCache::SetBase(CCdpMemCache *pBaseIn) {
-    assert(pBaseIn != nullptr);
-    pBase = pBaseIn;
+bool CCdpDBCache::EraseCDP(const CUserCDP &oldCDP, const CUserCDP &cdp) {
+    return EraseCDPFromDB(cdp) && EraseCDPFromRatioDB(oldCDP);
 }
 
-void CCdpMemCache::Flush() {
-    if (pBase != nullptr) {
-        pBase->BatchWrite(cdps);
-        cdps.clear();
-    }
+// Need to delete the old cdp(before updating cdp), then save the new cdp if necessary.
+bool CCdpDBCache::UpdateCDP(const CUserCDP &oldCDP, const CUserCDP &newCDP) {
+    return SaveCDPToDB(newCDP) && EraseCDPFromRatioDB(oldCDP) && SaveCDPToRatioDB(newCDP);
 }
 
-bool CCdpMemCache::SaveCdp(const CUserCDP &userCdp) {
-    static uint8_t valid = 1;  // 0: invalid; 1: valid
-    cdps.emplace(userCdp, valid);
-
-    total_staked_bcoins += userCdp.total_staked_bcoins;
-    total_owed_scoins += userCdp.total_owed_scoins;
-
-    return true;
-}
-
-bool CCdpMemCache::EraseCdp(const CUserCDP &userCdp) {
-    static uint8_t invalid = 0;  // 0: invalid; 1: valid
-
-    cdps[userCdp] = invalid;
-    total_staked_bcoins -= userCdp.total_staked_bcoins;
-    total_owed_scoins -= userCdp.total_owed_scoins;
-
-    return true;
-}
-
-
-uint64_t CCdpMemCache::GetGlobalCollateralRatio(const uint64_t bcoinMedianPrice) const {
-    // If total owed scoins equal to zero, the global collateral ratio becomes infinite.
-    return (total_owed_scoins == 0) ? UINT64_MAX : total_staked_bcoins * bcoinMedianPrice * kPercentBoost / total_owed_scoins;
-}
-
-uint64_t CCdpMemCache::GetGlobalCollateral() const {
-    return total_staked_bcoins;
-}
-
-bool CCdpMemCache::GetCdpListByCollateralRatio(const uint64_t collateralRatio, const uint64_t bcoinMedianPrice,
-                                         set<CUserCDP> &userCdps) {
-    return GetCdpList(collateralRatio * bcoinMedianPrice, userCdps);
-}
-
-bool CCdpMemCache::GetCdpList(const double ratio, set<CUserCDP> &expiredCdps, set<CUserCDP> &userCdps) {
-    static CRegID regId(std::numeric_limits<uint32_t>::max(), std::numeric_limits<uint16_t>::max());
-    static uint256 txid;
-    static CUserCDP cdp(regId, txid);
-    cdp.collateralRatioBase = ratio;
-    cdp.owner_regid         = regId;
-
-    auto boundary = cdps.upper_bound(cdp);
-    if (boundary != cdps.end()) {
-        for (auto iter = cdps.begin(); iter != boundary; ++ iter) {
-            if (db_util::IsEmpty(iter->second)) {
-                expiredCdps.insert(iter->first);
-            } else if (expiredCdps.count(iter->first) || userCdps.count(iter->first)) {
-                // TODO: log
-                continue;
-            } else {
-                // Got a valid cdp
-                userCdps.insert(iter->first);
-            }
-        }
-    }
-
-    if (pBase != nullptr) {
-        return pBase->GetCdpList(ratio, expiredCdps, userCdps);
-    }
-
-    return true;
-}
-
-bool CCdpMemCache::GetCdpList(const double ratio, set<CUserCDP> &userCdps) {
-    set<CUserCDP> expiredCdps;
-    if (!GetCdpList(ratio, expiredCdps, userCdps)) {
-        // TODO: log
-        return false;
-    }
-
-    return true;
-}
-
-void CCdpMemCache::BatchWrite(const map<CUserCDP, uint8_t> &cdpsIn) {
-    // If the value is empty, delete it from cache.
-    for (const auto &item : cdpsIn) {
-        if (db_util::IsEmpty(item.second)) {
-            cdps.erase(item.first);
-        } else {
-            cdps[item.first] = item.second;
-        }
-    }
-}
-
-bool CCdpDBCache::UpdateCdp(const int32_t blockHeight, int64_t changedBcoins, const int64_t changedScoins, CUserCDP &cdp) {
-    // 1. erase the old cdp in memory cache
-    cdpMemCache.EraseCdp(cdp);
-
-    // 2. update cdp's properties before saving
-    cdp.block_height = blockHeight;
-    cdp.total_staked_bcoins += changedBcoins;
-    cdp.total_owed_scoins += changedScoins;
-    cdp.collateralRatioBase = double(cdp.total_staked_bcoins) / cdp.total_owed_scoins;
-
-    // 3. save or erase cdp in cache/memory cache
-    // 3.1 erase cdp from cache if it's time to close cdp. Do not bother to erase cdp from
-    //     memory cache as it had never existed.
-    if (cdp.total_staked_bcoins == 0 && cdp.total_owed_scoins == 0) {
-        return EraseCdp(cdp);
-
-    } else {
-    // 3.2 otherwise, save cdp to cache/memory cache.
-        return SaveCdp(cdp) && cdpMemCache.SaveCdp(cdp);
-    }
-}
-
-bool CCdpDBCache::StakeBcoinsToCdp(const int32_t blockHeight, const uint64_t bcoinsToStake, const uint64_t mintedScoins,
-                                   CUserCDP &cdp) {
-    return UpdateCdp(blockHeight, bcoinsToStake, mintedScoins, cdp);
-}
-
-bool CCdpDBCache::RedeemBcoinsFromCdp(const int32_t blockHeight, const uint64_t bcoinsToRedeem,
-                                      const uint64_t scoinsToRepay, CUserCDP &cdp) {
-    return UpdateCdp(blockHeight, -1 * bcoinsToRedeem, -1 * scoinsToRepay, cdp);
-}
-
-bool CCdpDBCache::GetCdpList(const CRegID &regId, vector<CUserCDP> &cdpList) {
+bool CCdpDBCache::GetCDPList(const CRegID &regId, vector<CUserCDP> &cdpList) {
     set<uint256> cdpTxids;
-    if (!regId2CdpCache.GetData(regId.ToRawString(), cdpTxids)) {
+    if (!regId2CDPCache.GetData(regId.ToRawString(), cdpTxids)) {
         return false;
     }
 
@@ -177,49 +51,153 @@ bool CCdpDBCache::GetCdpList(const CRegID &regId, vector<CUserCDP> &cdpList) {
     return true;
 }
 
-bool CCdpDBCache::GetCdp(CUserCDP &cdp) {
-    if (!cdpCache.GetData(cdp.cdpid, cdp))
-        return false;
+bool CCdpDBCache::GetCDP(const uint256 cdpid, CUserCDP &cdp) {
+    return cdpCache.GetData(cdpid, cdp);
+}
+
+// Attention: update cdpCache and regId2CDPCache synchronously.
+bool CCdpDBCache::SaveCDPToDB(const CUserCDP &cdp) {
+    set<uint256> cdpTxids;
+    regId2CDPCache.GetData(cdp.owner_regid.ToRawString(), cdpTxids);
+    cdpTxids.insert(cdp.cdpid);   // failed to insert if txid existed.
+
+    return cdpCache.SetData(cdp.cdpid, cdp) && regId2CDPCache.SetData(cdp.owner_regid.ToRawString(), cdpTxids);
+}
+
+bool CCdpDBCache::EraseCDPFromDB(const CUserCDP &cdp) {
+    set<uint256> cdpTxids;
+    regId2CDPCache.GetData(cdp.owner_regid.ToRawString(), cdpTxids);
+    cdpTxids.erase(cdp.cdpid);
+
+    // If cdpTxids is empty, regId2CDPCache will erase the key automatically.
+    return cdpCache.EraseData(cdp.cdpid) && regId2CDPCache.SetData(cdp.owner_regid.ToRawString(), cdpTxids);
+}
+
+bool CCdpDBCache::SaveCDPToRatioDB(const CUserCDP &userCdp) {
+    uint64_t globalStakedBcoins = GetGlobalStakedBcoins();
+    uint64_t globalOwedScoins   = GetGlobalOwedScoins();
+
+    globalStakedBcoins += userCdp.total_staked_bcoins;
+    globalOwedScoins += userCdp.total_owed_scoins;
+
+    globalStakedBcoinsCache.SetData(globalStakedBcoins);
+    globalOwedScoinsCache.SetData(globalOwedScoins);
+
+    // cdpr{Ratio}{cdpid} -> CUserCDP
+    uint64_t boostedRatio = userCdp.collateral_ratio_base * CDP_BASE_RATIO_BOOST;
+    uint64_t ratio        = (boostedRatio < userCdp.collateral_ratio_base /* overflown */) ? UINT64_MAX : boostedRatio;
+    string strRatio       = strprintf("%016x", ratio);
+    auto key              = std::make_pair(strRatio, userCdp.cdpid);
+
+    ratioCDPIdCache.SetData(key, userCdp);
 
     return true;
 }
 
-// Attention: update cdpCache and regId2CdpCache synchronously.
-bool CCdpDBCache::SaveCdp(CUserCDP &cdp) {
-    set<uint256> cdpTxids;
-    regId2CdpCache.GetData(cdp.owner_regid.ToRawString(), cdpTxids);
-    cdpTxids.insert(cdp.cdpid);   // failed to insert if txid existed.
+bool CCdpDBCache::EraseCDPFromRatioDB(const CUserCDP &userCdp) {
+    uint64_t globalStakedBcoins = GetGlobalStakedBcoins();
+    uint64_t globalOwedScoins   = GetGlobalOwedScoins();
 
-    return cdpCache.SetData(cdp.cdpid, cdp) && regId2CdpCache.SetData(cdp.owner_regid.ToRawString(), cdpTxids);
-}
+    globalStakedBcoins -= userCdp.total_staked_bcoins;
+    globalOwedScoins -= userCdp.total_owed_scoins;
 
-bool CCdpDBCache::EraseCdp(const CUserCDP &cdp) {
-    set<uint256> cdpTxids;
-    regId2CdpCache.GetData(cdp.owner_regid.ToRawString(), cdpTxids);
-    cdpTxids.erase(cdp.cdpid);
+    globalStakedBcoinsCache.SetData(globalStakedBcoins);
+    globalOwedScoinsCache.SetData(globalOwedScoins);
 
-    // If cdpTxids is empty, regId2CdpCache will erase the key automatically.
-    return cdpCache.EraseData(cdp.cdpid) && regId2CdpCache.SetData(cdp.owner_regid.ToRawString(), cdpTxids);
+    uint64_t boostedRatio = userCdp.collateral_ratio_base * CDP_BASE_RATIO_BOOST;
+    uint64_t ratio        = (boostedRatio < userCdp.collateral_ratio_base /* overflown */) ? UINT64_MAX : boostedRatio;
+    string strRatio       = strprintf("%016x", ratio);
+    auto key              = std::make_pair(strRatio, userCdp.cdpid);
+
+    ratioCDPIdCache.EraseData(key);
+
+    return true;
 }
 
 // global collateral ratio floor check
 bool CCdpDBCache::CheckGlobalCollateralRatioFloorReached(const uint64_t bcoinMedianPrice,
                                                          const uint64_t globalCollateralRatioLimit) {
-    return cdpMemCache.GetGlobalCollateralRatio(bcoinMedianPrice) < globalCollateralRatioLimit;
+    return GetGlobalCollateralRatio(bcoinMedianPrice) < globalCollateralRatioLimit;
 }
 
 // global collateral amount ceiling check
 bool CCdpDBCache::CheckGlobalCollateralCeilingReached(const uint64_t newBcoinsToStake,
                                                       const uint64_t globalCollateralCeiling) {
-    return (newBcoinsToStake + cdpMemCache.GetGlobalCollateral()) > globalCollateralCeiling * COIN;
+    return (newBcoinsToStake + GetGlobalStakedBcoins()) > globalCollateralCeiling * COIN;
+}
+
+bool CCdpDBCache::GetCdpListByCollateralRatio(const uint64_t collateralRatio, const uint64_t bcoinMedianPrice,
+                                              set<CUserCDP> &userCdps) {
+    double ratio = (double(collateralRatio) / RATIO_BOOST) / (double(bcoinMedianPrice) / PRICE_BOOST);
+    assert(uint64_t(ratio * CDP_BASE_RATIO_BOOST) < UINT64_MAX);
+    string strRatio = strprintf("%016x", uint64_t(ratio * CDP_BASE_RATIO_BOOST));
+
+    return ratioCDPIdCache.GetAllElements(strRatio, userCdps);
+}
+
+uint64_t CCdpDBCache::GetGlobalStakedBcoins() const {
+    uint64_t globalStakedBcoins = 0;
+    globalStakedBcoinsCache.GetData(globalStakedBcoins);
+
+    return globalStakedBcoins;
+}
+
+inline uint64_t CCdpDBCache::GetGlobalOwedScoins() const {
+    uint64_t globalOwedScoins = 0;
+    globalOwedScoinsCache.GetData(globalOwedScoins);
+
+    return globalOwedScoins;
+}
+
+void CCdpDBCache::GetGlobalItem(uint64_t &globalStakedBcoins, uint64_t &globalOwedScoins) const {
+    globalStakedBcoinsCache.GetData(globalStakedBcoins);
+    globalOwedScoinsCache.GetData(globalOwedScoins);
+}
+
+uint64_t CCdpDBCache::GetGlobalCollateralRatio(const uint64_t bcoinMedianPrice) const {
+    // If total owed scoins equal to zero, the global collateral ratio becomes infinite.
+    uint64_t globalOwedScoins = GetGlobalOwedScoins();
+    if (globalOwedScoins == 0) {
+        return UINT64_MAX;
+    }
+
+    uint64_t globalStakedBcoins = GetGlobalStakedBcoins();
+
+    return double(globalStakedBcoins) * bcoinMedianPrice / PRICE_BOOST / globalOwedScoins * RATIO_BOOST;
+}
+
+void CCdpDBCache::SetBaseViewPtr(CCdpDBCache *pBaseIn) {
+    globalStakedBcoinsCache.SetBase(&pBaseIn->globalStakedBcoinsCache);
+    globalOwedScoinsCache.SetBase(&pBaseIn->globalOwedScoinsCache);
+    cdpCache.SetBase(&pBaseIn->cdpCache);
+    regId2CDPCache.SetBase(&pBaseIn->regId2CDPCache);
+    ratioCDPIdCache.SetBase(&pBaseIn->ratioCDPIdCache);
+}
+
+void CCdpDBCache::SetDbOpLogMap(CDBOpLogMap *pDbOpLogMapIn) {
+    globalStakedBcoinsCache.SetDbOpLogMap(pDbOpLogMapIn);
+    globalOwedScoinsCache.SetDbOpLogMap(pDbOpLogMapIn);
+    cdpCache.SetDbOpLogMap(pDbOpLogMapIn);
+    regId2CDPCache.SetDbOpLogMap(pDbOpLogMapIn);
+    ratioCDPIdCache.SetDbOpLogMap(pDbOpLogMapIn);
+}
+
+bool CCdpDBCache::UndoData() {
+    return globalStakedBcoinsCache.UndoData() && globalOwedScoinsCache.UndoData() && cdpCache.UndoData() &&
+           regId2CDPCache.UndoData() && ratioCDPIdCache.UndoData();
+}
+
+uint32_t CCdpDBCache::GetCacheSize() const {
+    return globalStakedBcoinsCache.GetCacheSize() + globalOwedScoinsCache.GetCacheSize() + cdpCache.GetCacheSize() +
+           regId2CDPCache.GetCacheSize() + ratioCDPIdCache.GetCacheSize();
 }
 
 bool CCdpDBCache::Flush() {
+    globalStakedBcoinsCache.Flush();
+    globalOwedScoinsCache.Flush();
     cdpCache.Flush();
-    regId2CdpCache.Flush();
-    cdpMemCache.Flush();
+    regId2CDPCache.Flush();
+    ratioCDPIdCache.Flush();
 
     return true;
 }
-
-uint32_t CCdpDBCache::GetCacheSize() const { return cdpCache.GetCacheSize() + regId2CdpCache.GetCacheSize(); }

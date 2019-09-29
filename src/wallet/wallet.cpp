@@ -17,8 +17,8 @@
 #include <boost/interprocess/sync/file_lock.hpp>
 #include "commons/random.h"
 #include "config/configuration.h"
-#include "json/json_spirit_value.h"
-#include "json/json_spirit_writer_template.h"
+#include "commons/json/json_spirit_value.h"
+#include "commons/json/json_spirit_writer_template.h"
 #include "net.h"
 #include "persistence/accountdb.h"
 #include "persistence/contractdb.h"
@@ -136,7 +136,7 @@ void CWallet::SyncTransaction(const uint256 &hash, CBaseTx *pTx, const CBlock *p
 
         auto DisConnectBlockProgress = [&]() {
             for (const auto &sptx : pBlock->vptx) {
-                if (sptx->IsCoinBase()) {
+                if (sptx->IsBlockRewardTx()) {
                     continue;
                 }
                 if (IsMine(sptx.get())) {
@@ -334,7 +334,6 @@ bool CWallet::EncryptWallet(const SecureString &strWalletPassphrase) {
         // bits of the unencrypted private key in slack space in the database file.
         CDB::Rewrite(strWalletFile);
     }
-    NotifyStatusChanged(this);
 
     return true;
 }
@@ -428,15 +427,15 @@ CWallet *CWallet::GetInstance() {
 
 Object CAccountTx::ToJsonObj(CKeyID const &key) const {
     Object obj;
+
+    Array txsArr;
+    for (auto const &item : mapAccountTx) {
+        txsArr.push_back(item.second.get()->ToString(*pCdMan->pAccountCache));
+    }
+
     obj.push_back(Pair("block_hash",    blockHash.ToString()));
     obj.push_back(Pair("block_height",  blockHeight));
-
-    Array txArray;
-    CAccountDBCache accountCache(*pCdMan->pAccountCache);
-    for (auto const &item : mapAccountTx) {
-        txArray.push_back(item.second.get()->ToString(accountCache));
-    }
-    obj.push_back(Pair("tx", txArray));
+    obj.push_back(Pair("tx",            txsArr));
 
     return obj;
 }
@@ -487,19 +486,16 @@ bool CWallet::CleanAll() {
     return true;
 }
 
-bool CWallet::Sign(const CKeyID &keyId, const uint256 &hash, vector<unsigned char> &signature, bool isMiner) const {
+bool CWallet::Sign(const CKeyID &keyId, const uint256 &hash, vector<uint8_t> &signature, bool isMiner) const {
     CKey key;
     if (GetKey(keyId, key, isMiner)) {
-        // if (isMiner == true) {
-        //     cout << "Sign miner key PubKey:" << key.GetPubKey().ToString() << endl;
-        //     cout << "Sign miner hash:" << hash.ToString() << endl;
-        // }
         return (key.Sign(hash, signature));
     }
+
     return false;
 }
 
-bool CWallet::AddCryptedKey(const CPubKey &vchPubKey, const std::vector<unsigned char> &vchCryptedSecret) {
+bool CWallet::AddCryptedKey(const CPubKey &vchPubKey, const std::vector<uint8_t> &vchCryptedSecret) {
     if (!CCryptoKeyStore::AddCryptedKey(vchPubKey, vchCryptedSecret))
         return false;
 
@@ -516,7 +512,7 @@ bool CWallet::AddCryptedKey(const CPubKey &vchPubKey, const std::vector<unsigned
     return false;
 }
 
-bool CWallet::LoadCryptedKey(const CPubKey &vchPubKey, const std::vector<unsigned char> &vchCryptedSecret) {
+bool CWallet::LoadCryptedKey(const CPubKey &vchPubKey, const std::vector<uint8_t> &vchCryptedSecret) {
     return CCryptoKeyStore::AddCryptedKey(vchPubKey, vchCryptedSecret);
 }
 
@@ -563,13 +559,14 @@ bool CWallet::RemoveKey(const CKey &key) {
     return true;
 }
 
-bool CWallet::IsReadyForCoolMiner(const CAccountDBCache &view) const {
+bool CWallet::IsReadyForCoolMiner(const CAccountDBCache &accountView) const {
     CRegID regId;
     for (auto const &item : mapKeys) {
-        if (item.second.HaveMinerKey() && view.GetRegId(item.first, regId)) {
+        if (item.second.HaveMinerKey() && accountView.GetRegId(item.first, regId)) {
             return true;
         }
     }
+
     return false;
 }
 
@@ -595,14 +592,14 @@ void CWallet::SetNull() {
     pWalletDbEncryption = nullptr;
 }
 
-bool CWallet::LoadMinVersion(int nVersion) {
+bool CWallet::LoadMinVersion(int32_t nVersion) {
     AssertLockHeld(cs_wallet);
     nWalletVersion = nVersion;
 
     return true;
 }
 
-int CWallet::GetVersion() {
+int32_t CWallet::GetVersion() {
     LOCK(cs_wallet);
     return nWalletVersion;
 }

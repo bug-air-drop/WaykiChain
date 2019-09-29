@@ -7,12 +7,16 @@
 #ifndef ENTITIES_CDP_H
 #define ENTITIES_CDP_H
 
+#include "config/scoin.h"
 #include "asset.h"
 #include "id.h"
 
-#include "json/json_spirit_utils.h"
-#include "json/json_spirit_value.h"
+#include "commons/json/json_spirit_utils.h"
+#include "commons/json/json_spirit_value.h"
 
+#include <cmath>
+
+using namespace std;
 using namespace json_spirit;
 
 /**
@@ -33,22 +37,43 @@ struct CUserCDP {
     uint64_t total_staked_bcoins;       // persisted: total staked bcoins
     uint64_t total_owed_scoins;         // persisted: TNj = last + minted = total minted - total redempted
 
-    mutable double collateralRatioBase; // ratioBase = total_staked_bcoins / total_owed_scoins, mem-only
+    mutable double collateral_ratio_base; // ratioBase = total_staked_bcoins / total_owed_scoins, mem-only
 
-    CUserCDP() : block_height(0), total_staked_bcoins(0), total_owed_scoins(0) {}
+    CUserCDP() : block_height(0), total_staked_bcoins(0), total_owed_scoins(0), collateral_ratio_base(0) {}
 
-    CUserCDP(const CRegID &regId, const uint256 &cdpTxIdIn)
-        : cdpid(cdpTxIdIn), owner_regid(regId), block_height(0), bcoin_symbol(SYMB::WICC), scoin_symbol(SYMB::WUSD), total_staked_bcoins(0), total_owed_scoins(0) {}
+    CUserCDP(const CRegID &regId, const uint256 &cdpidIn, int32_t blockHeight,
+             TokenSymbol bcoinSymbol, TokenSymbol scoinSymbol, uint64_t totalStakedBcoins,
+             uint64_t totalOwedScoins)
+        : cdpid(cdpidIn),
+          owner_regid(regId),
+          block_height(blockHeight),
+          bcoin_symbol(bcoinSymbol),
+          scoin_symbol(scoinSymbol),
+          total_staked_bcoins(totalStakedBcoins),
+          total_owed_scoins(totalOwedScoins) {
+              ComputeCollateralRatioBase();
+          }
 
+    // Attention: NEVER use block_height as a comparative factor, as block_height may not change, i.e. liquidating
+    // partially.
     bool operator<(const CUserCDP &cdp) const {
-        if (collateralRatioBase == cdp.collateralRatioBase) {
-            if (owner_regid == cdp.owner_regid)
-                return cdpid < cdp.cdpid;
-            else
-                return owner_regid < cdp.owner_regid;
-
-        } else
-            return collateralRatioBase < cdp.collateralRatioBase;
+        if (fabs(this->collateral_ratio_base - cdp.collateral_ratio_base) <= 1e-8) {
+            if (this->owner_regid == cdp.owner_regid) {
+                if (this->cdpid == cdp.cdpid) {
+                    if (this->total_staked_bcoins == cdp.total_staked_bcoins) {
+                        return this->total_owed_scoins < cdp.total_owed_scoins;
+                    } else {
+                        return this->total_staked_bcoins < cdp.total_staked_bcoins;
+                    }
+                } else {
+                    return this->cdpid < cdp.cdpid;
+                }
+            } else {
+                return this->owner_regid < cdp.owner_regid;
+            }
+        } else {
+            return this->collateral_ratio_base < cdp.collateral_ratio_base;
+        }
     }
 
     IMPLEMENT_SERIALIZE(
@@ -60,30 +85,39 @@ struct CUserCDP {
         READWRITE(VARINT(total_staked_bcoins));
         READWRITE(VARINT(total_owed_scoins));
         if (fRead) {
-            collateralRatioBase = double (total_staked_bcoins) / total_owed_scoins;
+            ComputeCollateralRatioBase();
         }
     )
 
-    string ToString() {
-        return strprintf(
-            "cdpid=%s, owner_regid=%s, block_height=%d, bcoin_symbol=%s, total_staked_bcoins=%d, "
-            "scoin_symbol=%s, tatal_owed_scoins=%d, collateralRatioBase=%f",
-            cdpid.ToString(), owner_regid.ToString(), block_height, bcoin_symbol, total_staked_bcoins,
-            scoin_symbol, total_owed_scoins, collateralRatioBase);
+    string ToString() const;
+
+    Object ToJson(uint64_t bcoinMedianPrice) const;
+
+    inline void ComputeCollateralRatioBase() const {
+        if (total_staked_bcoins != 0 && total_owed_scoins == 0) {
+            collateral_ratio_base = UINT64_MAX;  // big safe percent
+        } else if (total_staked_bcoins == 0 || total_owed_scoins == 0) {
+            collateral_ratio_base = 0;
+        } else {
+            collateral_ratio_base = double(total_staked_bcoins) / total_owed_scoins;
+        }
     }
 
-    Object ToJson() {
-        Object result;
-        result.push_back(Pair("cdpid",          cdpid.GetHex()));
-        result.push_back(Pair("regid",          owner_regid.ToString()));
-        result.push_back(Pair("last_height",    block_height));
-        result.push_back(Pair("bcoin_symbol",   bcoin_symbol));
-        result.push_back(Pair("total_bcoin",    total_staked_bcoins));
-        result.push_back(Pair("scoin_symbol",   scoin_symbol));
-        result.push_back(Pair("total_scoin",    total_owed_scoins));
-        result.push_back(Pair("ratio_base",     collateralRatioBase));
-        return result;
+    uint64_t GetCollateralRatio(uint64_t bcoinPrice) {
+        ComputeCollateralRatioBase();
+        if(collateral_ratio_base == UINT64_MAX)
+            return UINT64_MAX;
+
+        return  (double(bcoinPrice) / PRICE_BOOST) * collateral_ratio_base * RATIO_BOOST;
     }
+
+    void Redeem(int32_t blockHeight, uint64_t bcoinsToRedeem, uint64_t scoinsToRepay);
+
+    void AddStake(int32_t blockHeight, uint64_t bcoinsToStake, uint64_t mintedScoins);
+
+    void LiquidatePartial(int32_t blockHeight, uint64_t bcoinsToLiquidate, uint64_t scoinsToLiquidate);
+
+    bool IsFinished() const { return total_owed_scoins == 0 && total_staked_bcoins == 0; }
 
     // FIXME: need to set other members empty?
     bool IsEmpty() const { return cdpid.IsEmpty(); }

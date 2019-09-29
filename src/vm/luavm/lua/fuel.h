@@ -26,7 +26,7 @@ typedef int lua_burner_version;
 
 #define FUEL_STEP1              1
 #define FUEL_OP_ADD             3
-#define FUEL_OP_SUB             3    
+#define FUEL_OP_SUB             3
 #define FUEL_OP_MUL             5
 #define FUEL_OP_DIV             5
 #define FUEL_OP_IDIV            5
@@ -62,20 +62,21 @@ typedef int lua_burner_version;
 #define FUEL_CALL_Int64Add              3
 #define FUEL_CALL_Int64Sub              3
 #define FUEL_CALL_Int64Div              5
-#define FUEL_CALL_ByteToInteger	        10
-#define FUEL_CALL_IntegerToByte4	    6
-#define FUEL_CALL_IntegerToByte8	    8
-#define FUEL_CALL_GetBlockHash	        4
-#define FUEL_CALL_GetBlockTimestamp	    4
-#define FUEL_CALL_GetCurTxHash	        4
-#define FUEL_CALL_GetCurRunEnvHeight	4
-#define FUEL_CALL_GetCurTxAccount	    4
-#define FUEL_CALL_GetCurTxPayAmount	    4
-#define FUEL_CALL_GetContractRegId	    4
-#define FUEL_CALL_GetTxRegID	        200
-#define FUEL_CALL_GetTxConfirmHeight	200
-#define FUEL_CALL_GetAccountPublickey	200
-#define FUEL_CALL_GetBase58Addr	        200
+#define FUEL_CALL_ByteToInteger         10
+#define FUEL_CALL_IntegerToByte4        6
+#define FUEL_CALL_IntegerToByte8        8
+#define FUEL_CALL_GetBlockHash          4
+#define FUEL_CALL_GetBlockTimestamp     4
+#define FUEL_CALL_GetCurTxHash          4
+#define FUEL_CALL_GetCurRunEnvHeight    4
+#define FUEL_CALL_GetCurTxAccount       4
+#define FUEL_CALL_GetCurTxPayAmount     4
+#define FUEL_CALL_GetCurTxInputAsset    4
+#define FUEL_CALL_GetContractRegId      4
+#define FUEL_CALL_GetTxRegID            200
+#define FUEL_CALL_GetTxConfirmHeight    200
+#define FUEL_CALL_GetAccountPublickey   200
+#define FUEL_CALL_GetBase58Addr         200
 
 #define FUEL_CALL_Sha256Once            30
 #define FUEL_DATA32_Sha256Once          6
@@ -96,9 +97,9 @@ typedef int lua_burner_version;
 #define FUEL_DATA8_DesTriple            2
 
 #define FUEL_ACCOUNT_OPERATE            4500
-#define FUEL_ACCTOUNT_NEW               25000
+#define FUEL_ACCOUNT_NEW                25000
 #define FUEL_ACCOUNT_GET_VALUE          400
 #define FUEL_ACCOUNT_GET_FUND_TAG       600
-#define FUEL_ACCTOUNT_UNCHANGED         200
- 
+#define FUEL_ACCOUNT_UNCHANGED          200
+
 #endif // FUEL_H

@@ -12,193 +12,137 @@
 
 #include "commons/serialize.h"
 #include "persistence/dbaccess.h"
-#include "entities/id.h"
 #include "entities/account.h"
+#include "entities/dexorder.h"
 
 using namespace std;
 
-enum OrderSide {
-    ORDER_BUY  = 0,
-    ORDER_SELL = 1,
-};
+/*       type               prefixType                   key                            value                type             */
+/*  ----------------   -------------------------  ---------------------------       ------------------   ------------------------ */
+    /////////// DexDB
+    // block orders: height generate_type txid -> active order
+typedef CCompositeKVCache<dbk::DEX_BLOCK_ORDERS,  tuple<uint32_t, uint8_t, uint256>, CDEXOrderDetail>     DEXBlockOrdersCache;
 
-const static std::string OrderSideTitles[] = {"Buy", "Sell"};
+// DEX_DB
+namespace DEX_DB {
+    //block order key: height generate_type txid
+    typedef pair<DEXBlockOrdersCache::KeyType, DEXBlockOrdersCache::ValueType> BlockOrdersItem;
+    typedef vector<BlockOrdersItem> BlockOrders;
 
-enum OrderType {
-    ORDER_LIMIT_PRICE   = 0, //!< limit price order type
-    ORDER_MARKET_PRICE  = 1  //!< market price order type
-};
-
-const static std::string OrderTypeTitles[] = {"LimitPrice", "MarketPrice"};
-
-enum OrderGenerateType {
-    EMPTY_ORDER         = 0,
-    USER_GEN_ORDER      = 1,
-    SYSTEM_GEN_ORDER    = 2
-};
-
-struct CDEXOrderDetail {
-    CRegID user_regid;         //!< user regid
-    OrderType order_type;      //!< order type
-    OrderSide order_side;      //!< order side
-    TokenSymbol coin_symbol;   //!< coin symbol
-    TokenSymbol asset_symbol;  //!< asset symbol
-    uint64_t coin_amount;      //!< amount of coin to buy/sell asset
-    uint64_t asset_amount;     //!< amount of asset to buy/sell
-    uint64_t price;            //!< price in coinType want to buy/sell asset
-};
-
-
-// for all active order db: orderId -> CDEXActiveOrder
-struct CDEXActiveOrder {
-    OrderGenerateType generate_type     = EMPTY_ORDER;  //!< generate type
-    CTxCord  tx_cord                   = CTxCord();    //!< related tx cord
-    uint64_t total_deal_coin_amount    = 0;            //!< total deal coin amount
-    uint64_t total_deal_asset_amount   = 0;            //!< total deal asset amount
-
-    CDEXActiveOrder() {}
-    
-    CDEXActiveOrder(OrderGenerateType generateType, const CTxCord &txCord):
-        generate_type(generateType), tx_cord(txCord)
-    {}
-
-    IMPLEMENT_SERIALIZE(
-        READWRITE((uint8_t&)generate_type);
-        READWRITE(tx_cord);
-        READWRITE(VARINT(total_deal_coin_amount));
-        READWRITE(VARINT(total_deal_asset_amount));
-    )
-
-    bool IsEmpty() const {
-        return generate_type == EMPTY_ORDER;
+    inline uint32_t GetHeight(const DEXBlockOrdersCache::KeyType &key) {
+        return std::get<0>(key);
     }
-    void SetEmpty() {
-        generate_type  = EMPTY_ORDER;
-        total_deal_coin_amount    = 0;
-        total_deal_asset_amount   = 0;
-        tx_cord.SetEmpty();
+
+    inline OrderGenerateType GetGenerateType(const DEXBlockOrdersCache::KeyType &key) {
+        return (OrderGenerateType)std::get<1>(key);
     }
+
+    inline const uint256& GetOrderId(const DEXBlockOrdersCache::KeyType &key) {
+        return std::get<2>(key);
+    }
+
+    // return err str if err happens
+    shared_ptr<string> ParseLastPos(const string &lastPosInfo, DEXBlockOrdersCache::KeyType &lastKey);
+
+    shared_ptr<string> MakeLastPos(const DEXBlockOrdersCache::KeyType &lastKey, string &lastPosInfo);
+
+    void OrderToJson(const uint256 &orderId, const CDEXOrderDetail &order, Object &obj);
+
+    void BlockOrdersToJson(const BlockOrders &orderList, Object &obj);
 };
 
-// order txid -> sys order data
-// order txid:
-//   (1) CCDPStakeTx, create sys buy market order for WGRT by WUSD when alter CDP and the interest is WUSD
-//   (2) CCDPRedeemTx, create sys buy market order for WGRT by WUSD when the interest is WUSD
-//   (3) CCDPLiquidateTx, create sys buy market order for WGRT by WUSD when the penalty is WUSD
-
-// txid -> sys order data
-class CDEXSysOrder {
-private:
-    OrderSide       order_side;     //!< order side: buy or sell
-    OrderType       order_type;     //!< order type
-    TokenSymbol     coin_symbol;    //!< coin type
-    TokenSymbol     asset_symbol;   //!< asset type
-
-    uint64_t        coin_amount;    //!< amount of coin to buy/sell asset
-    uint64_t        asset_amount;   //!< amount of coin to buy asset
-    uint64_t        price;          //!< price in coin_symbol want to buy/sell asset
-public:// create functions
-    static shared_ptr<CDEXSysOrder> CreateBuyLimitOrder(const TokenSymbol &coinSymbol, const TokenSymbol &assetSymbol,
-                                                        const uint64_t assetAmountIn, const uint64_t priceIn);
-
-    static shared_ptr<CDEXSysOrder> CreateSellLimitOrder(const TokenSymbol &coinSymbol, const TokenSymbol &assetSymbol,
-                                                         const uint64_t assetAmountIn, const uint64_t priceIn);
-
-    static shared_ptr<CDEXSysOrder> CreateBuyMarketOrder(const TokenSymbol &coinSymbol, const TokenSymbol &assetSymbol,
-                                                         const uint64_t coinAmountIn);
-
-    static shared_ptr<CDEXSysOrder> CreateSellMarketOrder(const TokenSymbol &coinSymbol, const TokenSymbol &assetSymbol,
-                                                          const uint64_t assetAmountIn);
-
+class CDEXOrdersGetter {
 public:
-    // default constructor
-    CDEXSysOrder():
-        order_side(ORDER_BUY),
-        order_type(ORDER_LIMIT_PRICE),
-        coin_symbol(SYMB::WUSD),
-        asset_symbol(SYMB::WICC),
-        coin_amount(0),
-        asset_amount(0),
-        price(0)
-        { }
-
-    IMPLEMENT_SERIALIZE(
-        READWRITE((uint8_t&)order_side);
-        READWRITE((uint8_t&)order_type);
-        READWRITE(coin_symbol);
-        READWRITE(asset_symbol);
-
-        READWRITE(VARINT(coin_amount));
-        READWRITE(VARINT(asset_amount));
-        READWRITE(VARINT(price));
-    )
-
-    string ToString() {
-        return strprintf(
-                "order_side=%s, order_type=%s, coin_symbol=%d, asset_symbol=%s, coin_amount=%lu, asset_amount=%lu, price=%lu",
-                OrderSideTitles[order_side], OrderTypeTitles[order_type],
-                coin_symbol, asset_symbol, coin_amount, asset_amount, price);
+    uint32_t    begin_height    = 0;        // the begin block height of returned orders
+    uint32_t    end_height      = 0;        // the end block height of returned orders
+    bool        has_more        = false;    // has more orders in db
+    DEXBlockOrdersCache::KeyType  last_key;       // the key of last position to get more orders
+    DEX_DB::BlockOrders orders;             // the returned orders
+private:
+    DEXBlockOrdersCache &db_cache;
+    CDBAccess &db_access;
+public:
+    CDEXOrdersGetter(DEXBlockOrdersCache &dbCache)
+        : db_cache(dbCache), db_access(*dbCache.GetDbAccessPtr()) {
     }
 
-    bool IsEmpty() const;
-    void SetEmpty();
-    void GetOrderDetail(CDEXOrderDetail &orderDetail) const;
+    bool Execute(uint32_t fromHeight, uint32_t toHeight, uint32_t maxCount, const DEXBlockOrdersCache::KeyType &lastPosInfo);
+    void ToJson(Object &obj);
 };
 
-// System-generated Market Order
-// wicc -> wusd (cdp forced liquidation)
-// wgrt -> wusd (inflate wgrt to get wusd)
-// wusd -> wgrt (pay interest to get wgrt to burn)
-struct CDEXSysForceSellBcoinsOrder {
-    CUserID cdp_owner_uid;
-    uint64_t bcoins_amount;
-    uint64_t scoins_amount;
-    double collateral_ratio_by_amount; // fixed: 100 *  bcoinsAmount / scoinsAmount
-    double collateral_ratio_by_value;  // collateralRatioAmount * wiccMedianPrice
-    uint64_t order_discount; // *1000 E.g. 97% * 1000 = 970
 
+class CDEXSysOrdersGetter {
+public:
+    DEX_DB::BlockOrders orders; // exec result
+private:
+    DEXBlockOrdersCache &db_cache;
+    CDBAccess &db_access;
+public:
+    CDEXSysOrdersGetter(DEXBlockOrdersCache &dbCache)
+        : db_cache(dbCache), db_access(*dbCache.GetDbAccessPtr()) {
+    }
+    bool Execute(uint32_t height);
+
+    void ToJson(Object &obj);
 };
 
 class CDexDBCache {
 public:
     CDexDBCache() {}
-    CDexDBCache(CDBAccess *pDbAccess) : activeOrderCache(pDbAccess), sysOrderCache(pDbAccess) {};
+    CDexDBCache(CDBAccess *pDbAccess) : activeOrderCache(pDbAccess), blockOrdersCache(pDbAccess) {};
 
 public:
-    bool GetActiveOrder(const uint256 &orderTxId, CDEXActiveOrder& activeOrder);
-    bool CreateActiveOrder(const uint256 &orderTxId, const CDEXActiveOrder& activeOrder);
-    bool ModifyActiveOrder(const uint256 &orderTxId, const CDEXActiveOrder& activeOrder);
-    bool EraseActiveOrder(const uint256 &orderTxId);
-
-    bool GetSysOrder(const uint256 &orderTxId, CDEXSysOrder &buyOrder);
-    bool CreateSysOrder(const uint256 &orderTxId, const CDEXSysOrder &buyOrder);
+    bool GetActiveOrder(const uint256 &orderTxId, CDEXOrderDetail& activeOrder);
+    bool HaveActiveOrder(const uint256 &orderTxId);
+    bool CreateActiveOrder(const uint256 &orderTxId, const CDEXOrderDetail& activeOrder);
+    bool UpdateActiveOrder(const uint256 &orderTxId, const CDEXOrderDetail& activeOrder);
+    bool EraseActiveOrder(const uint256 &orderTxId, const CDEXOrderDetail &activeOrder);
 
     bool Flush() {
         activeOrderCache.Flush();
-        sysOrderCache.Flush();
+        blockOrdersCache.Flush();
         return true;
+    }
+
+    uint32_t GetCacheSize() const {
+        return activeOrderCache.GetCacheSize() +
+            blockOrdersCache.GetCacheSize();
     }
     void SetBaseViewPtr(CDexDBCache *pBaseIn) {
         activeOrderCache.SetBase(&pBaseIn->activeOrderCache);
-        sysOrderCache.SetBase(&pBaseIn->sysOrderCache);
+        blockOrdersCache.SetBase(&pBaseIn->blockOrdersCache);
     };
 
     void SetDbOpLogMap(CDBOpLogMap *pDbOpLogMapIn) {
         activeOrderCache.SetDbOpLogMap(pDbOpLogMapIn);
-        sysOrderCache.SetDbOpLogMap(pDbOpLogMapIn);
+        blockOrdersCache.SetDbOpLogMap(pDbOpLogMapIn);
     }
 
-    bool UndoDatas() {
-        return activeOrderCache.UndoDatas() &&
-               sysOrderCache.UndoDatas();
+    bool UndoData() {
+        return activeOrderCache.UndoData() &&
+               blockOrdersCache.UndoData();
+    }
+
+    shared_ptr<CDEXOrdersGetter> CreateOrdersGetter() {
+        assert(blockOrdersCache.GetBasePtr() == nullptr && "only support top level cache");
+        return make_shared<CDEXOrdersGetter>(blockOrdersCache);
+    }
+
+    shared_ptr<CDEXSysOrdersGetter> CreateSysOrdersGetter() {
+        assert(blockOrdersCache.GetBasePtr() == nullptr && "only support top level cache");
+        return make_shared<CDEXSysOrdersGetter>(blockOrdersCache);
     }
 private:
-/*       type               prefixType               key                     value                 variable               */
-/*  ----------------   -------------------------   -----------------------  ------------------   ------------------------ */
+    DEXBlockOrdersCache::KeyType MakeBlockOrderKey(const uint256 &orderid, const CDEXOrderDetail &activeOrder) {
+        return make_tuple(activeOrder.tx_cord.GetHeight(), (uint8_t)activeOrder.generate_type, orderid);
+    }
+private:
+/*       type               prefixType                      key                        value                variable             */
+/*  ----------------   -----------------------------  ---------------------------  ------------------   ------------------------ */
     /////////// DexDB
     // order tx id -> active order
-    CCompositeKVCache< dbk::DEX_ACTIVE_ORDER,       uint256,             CDEXActiveOrder >     activeOrderCache;
-    CCompositeKVCache< dbk::DEX_SYS_ORDER,          uint256,             CDEXSysOrder >        sysOrderCache;
+    CCompositeKVCache< dbk::DEX_ACTIVE_ORDER,          uint256,                     CDEXOrderDetail >     activeOrderCache;
+    DEXBlockOrdersCache    blockOrdersCache;
 };
 
 #endif //PERSIST_DEX_H

@@ -22,12 +22,12 @@
 #include "rpc/core/rpcserver.h"
 #include "systestbase.h"
 #include <boost/algorithm/string/predicate.hpp>
-#include "json/json_spirit_writer_template.h"
-#include "json/json_spirit_reader_template.h"
-#include "json/json_spirit_reader.h"
-#include "json/json_spirit_writer.h"
-#include "json/json_spirit_value.h"
-#include "json/json_spirit_stream_reader.h"
+#include "commons/json/json_spirit_writer_template.h"
+#include "commons/json/json_spirit_reader_template.h"
+#include "commons/json/json_spirit_reader.h"
+#include "commons/json/json_spirit_writer.h"
+#include "commons/json/json_spirit_value.h"
+#include "commons/json/json_spirit_stream_reader.h"
 #include "tx/tx.h"
 using namespace std;
 using namespace boost;
@@ -131,7 +131,7 @@ public:
 		int nFee = 1*COIN + 10000000;
 		string strTxHash;
 		string strFileName(sourceCode);
-		Value valueRes = RegisterContractTx(strAddr,strFileName , 100, nFee);
+		Value valueRes = DeployContractTx(strAddr,strFileName , 100, nFee);
 		BOOST_CHECK(GetHashFromCreatedTx(valueRes,strTxHash));
 		BOOST_CHECK(GenerateOneBlock());
 		return strTxHash;
@@ -558,7 +558,7 @@ BOOST_FIXTURE_TEST_CASE(appacc,CSysScriptTest){
 	CRegID strreg;
 	string address = "e21rEzVwkPFQYfgxcg7xLp7DKeYrW4Fpoz";
 
-	BOOST_CHECK(SysTestBase::GetRegID(address,strreg));
+	BOOST_CHECK(SysTestBase::GegRegId(address,strreg));
 	std::shared_ptr<CAppUserAccount> tem = std::make_shared<CAppUserAccount>();
 	contractScriptTemp.GetContractAccount(script,strreg.GetRegIdRaw(),*tem.get());
 	BOOST_CHECK(tem.get()->GetBcoins() == nMoney);

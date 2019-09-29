@@ -7,13 +7,16 @@
 #ifndef ENTITIES_CONTRACT_H
 #define ENTITIES_CONTRACT_H
 
-#include "id.h"
+#include "commons/serialize.h"
+#include "config/version.h"
 
 #include <string>
 
+using namespace std;
+
 /**
  *  lua contract - for blockchain tx serialization/deserialization purpose
- *      - This is a backward compability implmentation,
+ *      - This is a backward compability implentation,
  *      - Only universal contract tx will be allowed after the software fork height
  */
 class CLuaContract {
@@ -26,41 +29,36 @@ public:
     CLuaContract(const string codeIn, const string memoIn): code(codeIn), memo(memoIn) { };
 
 public:
-    inline unsigned int GetContractSize() const {
-        return GetContractSize(SER_DISK, CLIENT_VERSION);
-    }
+    inline uint32_t GetContractSize() const { return GetContractSize(SER_DISK, CLIENT_VERSION); }
 
-    inline unsigned int GetContractSize(int nType, int nVersion) const {
-        unsigned int sz = ::GetSerializeSize(code, nType, nVersion);
+    inline uint32_t GetContractSize(int32_t nType, int32_t nVersion) const {
+        uint32_t sz = ::GetSerializeSize(code, nType, nVersion);
         sz += ::GetSerializeSize(memo, nType, nVersion);
         return sz;
     }
 
-    inline unsigned int GetSerializeSize(int nType, int nVersion) const {
-        unsigned int sz = GetContractSize(nType, nVersion);
+    inline uint32_t GetSerializeSize(int32_t nType, int32_t nVersion) const {
+        uint32_t sz = GetContractSize(nType, nVersion);
         return GetSizeOfCompactSize(sz) + sz;
     }
 
     template <typename Stream>
-    void Serialize(Stream &s, int nType, int nVersion) const {
-        unsigned int sz = GetContractSize(nType, nVersion);
+    void Serialize(Stream &s, int32_t nType, int32_t nVersion) const {
+        uint32_t sz = GetContractSize(nType, nVersion);
         WriteCompactSize(s, sz);
         s << code << memo;
     }
 
     template <typename Stream>
-    void Unserialize(Stream &s, int nType, int nVersion) {
-        unsigned int sz = ReadCompactSize(s);
+    void Unserialize(Stream &s, int32_t nType, int32_t nVersion) {
+        uint32_t sz = ReadCompactSize(s);
         s >> code >> memo;
         if (sz != GetContractSize(nType, nVersion)) {
-            assert(false && "contractSize != SerializeSize(code) + SerializeSize(memo)");
+            throw ios_base::failure("contractSize != SerializeSize(code) + SerializeSize(memo)");
         }
     }
 
-public:
     bool IsValid();
-    bool IsCheckAccount(void);
-
 };
 
 /** ###################################### Universal Contract ######################################*/
@@ -86,33 +84,23 @@ public:
 public:
     CUniversalContract(): vm_type(NULL_VM) {}
 
-    CUniversalContract(const string &codeIn, const string &memoIn) :
-        vm_type(LUA_VM), upgradable(true), code(codeIn), memo(memoIn), abi("") { };
+    CUniversalContract(const string &codeIn, const string &memoIn)
+        : vm_type(LUA_VM), upgradable(true), code(codeIn), memo(memoIn), abi("") {}
 
-    CUniversalContract(const string &codeIn, const string &memoIn, const string &abiIn) :
-        vm_type(LUA_VM), upgradable(true), code(codeIn), memo(memoIn), abi(abiIn) { };
+    CUniversalContract(const string &codeIn, const string &memoIn, const string &abiIn)
+        : vm_type(LUA_VM), upgradable(true), code(codeIn), memo(memoIn), abi(abiIn) {}
 
-    CUniversalContract(bool upgradableIn, const string &codeIn, const string &memoIn, const string &abiIn) :
-        vm_type(LUA_VM), upgradable(upgradableIn), code(codeIn), memo(memoIn), abi(abiIn) { };
+    CUniversalContract(const bool upgradableIn, const string &codeIn, const string &memoIn, const string &abiIn)
+        : vm_type(LUA_VM), upgradable(upgradableIn), code(codeIn), memo(memoIn), abi(abiIn) {}
 
-    CUniversalContract(VMType vmTypeIn, bool upgradableIn,
-                        const string &codeIn, const string &memoIn, const string &abiIn) :
-        vm_type(vmTypeIn), upgradable(upgradableIn), code(codeIn), memo(memoIn), abi(abiIn) { };
+    CUniversalContract(VMType vmTypeIn, bool upgradableIn, const string &codeIn, const string &memoIn,
+                       const string &abiIn)
+        : vm_type(vmTypeIn), upgradable(upgradableIn), code(codeIn), memo(memoIn), abi(abiIn) {}
 
-    uint256 GetHash(bool recalculate = false) const {
-        if (recalculate || sigHash.IsNull()) {
-            CHashWriter ss(SER_GETHASH, 0);
-            ss << (uint8_t&)vm_type << upgradable << code << memo << abi;
-            sigHash = ss.GetHash();
-        }
+public:
+    inline uint32_t GetContractSize() const { return GetSerializeSize(SER_DISK, CLIENT_VERSION); }
 
-        return sigHash;
-    }
-
-    bool IsEmpty() const {
-        // FIXME:
-        return vm_type == VMType::NULL_VM || code.empty();
-    }
+    bool IsEmpty() const { return vm_type == VMType::NULL_VM && code.empty() && memo.empty() && abi.empty(); }
 
     void SetEmpty() {
         vm_type = VMType::NULL_VM;
@@ -129,8 +117,7 @@ public:
         READWRITE(abi);
     )
 
-private:
-    mutable uint256 sigHash;  //!< only in memory
+    bool IsValid();
 };
 
-#endif //ENTITIES_CONTRACT_H
+#endif  // ENTITIES_CONTRACT_H

@@ -46,19 +46,20 @@
 #include "tx/contracttx.h"
 #include "tx/delegatetx.h"
 #include "tx/dextx.h"
-#include "tx/fcoinstaketx.h"
+#include "tx/coinstaketx.h"
 #include "tx/mulsigtx.h"
 #include "tx/pricefeedtx.h"
 #include "tx/tx.h"
 #include "tx/txmempool.h"
+#include "tx/assettx.h"
 
-class CBlockIndex;
+// class CBlockIndex;
 class CBloomFilter;
 class CChain;
 class CInv;
-class CAccountDBCache;
-class CBlockTreeDB;
-class CSysParamDBCache;
+// class CSysParamDBCache;
+// class CBlockDBCache;
+// class CAccountDBCache;
 
 extern CCriticalSection cs_main;
 /** The currently-connected chain of blocks. */
@@ -70,6 +71,12 @@ extern map<uint256, CBlockIndex *> mapBlockIndex;
 extern uint64_t nLastBlockTx;
 extern uint64_t nLastBlockSize;
 extern const string strMessageMagic;
+
+extern bool mining;     // could be changed due to vote change
+extern CKeyID minerKeyId;  // miner accout keyId
+extern CKeyID nodeKeyId;   // first keyId of the node
+
+static const string NetTypeNames[] = { "MAIN_NET", "TEST_NET", "REGTEST_NET" };
 
 class CTxUndo;
 class CValidationState;
@@ -97,7 +104,7 @@ void UnregisterNodeSignals(CNodeSignals &nodeSignals);
 bool CheckDiskSpace(uint64_t nAdditionalBytes = 0);
 
 /** Verify consistency of the block and coin databases */
-bool VerifyDB(int nCheckLevel, int nCheckDepth);
+bool VerifyDB(int32_t nCheckLevel, int32_t nCheckDepth);
 
 /** Process protocol messages received from a given node */
 bool ProcessMessages(CNode *pFrom);
@@ -106,47 +113,36 @@ bool SendMessages(CNode *pTo, bool fSendTrickle);
 /** Run an instance of the script checking thread */
 void ThreadScriptCheck();
 
-/** Calculate the minimum amount of work a received block needs, without knowing its direct parent */
-unsigned int ComputeMinWork(unsigned int nBase, int64_t nTime);
-
 /** Format a string that describes several potential problems detected by the core */
 string GetWarnings(string strFor);
 /** Retrieve a transaction (from memory pool, or from disk, if possible) */
-bool GetTransaction(std::shared_ptr<CBaseTx> &pBaseTx, const uint256 &hash, CContractDBCache &scriptDBCache, bool bSearchMempool = true);
+bool GetTransaction(std::shared_ptr<CBaseTx> &pBaseTx, const uint256 &hash, CBlockDBCache &blockCache, bool bSearchMempool = true);
 /** Retrieve a transaction height comfirmed in block*/
-int GetTxConfirmHeight(const uint256 &hash, CContractDBCache &scriptDBCache);
+int32_t GetTxConfirmHeight(const uint256 &hash, CBlockDBCache &blockCache);
 
 /** Abort with a message */
 bool AbortNode(const string &msg);
 /** Get statistics from node state */
 bool GetNodeStateStats(NodeId nodeid, CNodeStateStats &stats);
 /** Increase a node's misbehavior score. */
-void Misbehaving(NodeId nodeid, int howmuch);
+void Misbehaving(NodeId nodeid, int32_t howmuch);
 
-bool VerifySignature(const uint256 &sigHash, const std::vector<unsigned char> &signature, const CPubKey &pubKey);
+bool VerifySignature(const uint256 &sigHash, const std::vector<uint8_t> &signature, const CPubKey &pubKey);
 
 /** (try to) add transaction to memory pool **/
 bool AcceptToMemoryPool(CTxMemPool &pool, CValidationState &state, CBaseTx *pBaseTx,
                         bool fLimitFree, bool fRejectInsaneFee = false);
 
-std::shared_ptr<CBaseTx> CreateNewEmptyTransaction(unsigned char uType);
+std::shared_ptr<CBaseTx> CreateNewEmptyTransaction(uint8_t txType);
 
 struct CNodeStateStats {
-    int nMisbehavior;
+    int32_t nMisbehavior;
 };
-
-int64_t GetMinRelayFee(const CBaseTx *pBaseTx, unsigned int nBytes, bool fAllowFree);
-
-// Context-independent validity checks
-bool CheckTx(int height, CBaseTx *ptx, CCacheWrapper &cacheWrapper, CValidationState &state);
 
 /** Check for standard transaction types
     @return True if all outputs (scriptPubKeys) use only standard transaction forms
 */
 bool IsStandardTx(CBaseTx *pBaseTx, string &reason);
-
-//get tx operate account log
-bool GetTxOperLog(const uint256 &txid, vector<CAccount> &accountLogs);
 
 /** An in-memory indexed chain of blocks. */
 class CChain {
@@ -165,7 +161,7 @@ public:
     }
 
     /** Returns the index entry at a particular height in this chain, or nullptr if no such height exists. */
-    CBlockIndex *operator[](int height) const {
+    CBlockIndex *operator[](int32_t height) const {
         if (height < 0 || height >= (int)vChain.size())
             return nullptr;
         return vChain[height];
@@ -191,7 +187,7 @@ public:
     }
 
     /** Return the maximal height in the chain. Is equal to chain.Tip() ? chain.Tip()->height : -1. */
-    int Height() const {
+    int32_t Height() const {
         return vChain.size() - 1;
     }
 
@@ -205,8 +201,6 @@ public:
     CBlockIndex *FindFork(const CBlockLocator &locator) const;
 }; //end of CChain
 
-
-
 class CCacheDBManager {
 public:
     CDBAccess           *pSysParamDb;
@@ -214,6 +208,9 @@ public:
 
     CDBAccess           *pAccountDb;
     CAccountDBCache     *pAccountCache;
+
+    CDBAccess           *pAssetDb;
+    CAssetDBCache       *pAssetCache;
 
     CDBAccess           *pContractDb;
     CContractDBCache    *pContractCache;
@@ -224,48 +221,60 @@ public:
     CDBAccess           *pCdpDb;
     CCdpDBCache         *pCdpCache;
 
+    CDBAccess           *pClosedCdpDb;
+    CClosedCdpDBCache   *pClosedCdpCache;
+
     CDBAccess           *pDexDb;
     CDexDBCache         *pDexCache;
 
-    CBlockTreeDB        *pBlockTreeDb;
+    CBlockIndexDB       *pBlockIndexDb;
+    CDBAccess           *pBlockDb;
+    CBlockDBCache        *pBlockCache;
 
     CDBAccess           *pLogDb;
     CLogDBCache         *pLogCache;
 
-    CDBAccess           *pTxReceiptDb;
-    CTxReceiptDBCache   *pTxReceiptCache;
+    CDBAccess           *pReceiptDb;
+    CTxReceiptDBCache   *pReceiptCache;
 
     CTxMemCache         *pTxCache;
     CPricePointMemCache *pPpCache;
 
 public:
-    CCacheDBManager(bool fReIndex, bool fMemory, size_t nAccountDBCache, size_t nContractDBCache,
-                    size_t nDelegateDBCache, size_t nBlockTreeDBCache) {
-        pSysParamDb     = new CDBAccess(DBNameType::SYSPARAM, nAccountDBCache, false, fReIndex);  // TODO fix cache size
+    CCacheDBManager(bool fReIndex, bool fMemory) {
+        pSysParamDb     = new CDBAccess(DBNameType::SYSPARAM, false, fReIndex);
         pSysParamCache  = new CSysParamDBCache(pSysParamDb);
 
-        pAccountDb      = new CDBAccess(DBNameType::ACCOUNT, nAccountDBCache, false, fReIndex);
+        pAccountDb      = new CDBAccess(DBNameType::ACCOUNT, false, fReIndex);
         pAccountCache   = new CAccountDBCache(pAccountDb);
 
-        pContractDb     = new CDBAccess(DBNameType::CONTRACT, nContractDBCache, false, fReIndex);
+        pAssetDb        = new CDBAccess(DBNameType::ASSET, false, fReIndex);
+        pAssetCache     = new CAssetDBCache(pAssetDb);
+
+        pContractDb     = new CDBAccess(DBNameType::CONTRACT, false, fReIndex);
         pContractCache  = new CContractDBCache(pContractDb);
 
-        pDelegateDb     = new CDBAccess(DBNameType::DELEGATE, nDelegateDBCache, false, fReIndex);
+        pDelegateDb     = new CDBAccess(DBNameType::DELEGATE, false, fReIndex);
         pDelegateCache  = new CDelegateDBCache(pDelegateDb);
 
-        pCdpDb          = new CDBAccess(DBNameType::CDP, nAccountDBCache, false, fReIndex); //TODO fix cache size
+        pCdpDb          = new CDBAccess(DBNameType::CDP, false, fReIndex);
         pCdpCache       = new CCdpDBCache(pCdpDb);
 
-        pDexDb          = new CDBAccess(DBNameType::DEX, nAccountDBCache, false, fReIndex); //TODO fix cache size
+        pClosedCdpDb    = new CDBAccess(DBNameType::CLOSEDCDP, false, fReIndex);
+        pClosedCdpCache = new CClosedCdpDBCache(pClosedCdpDb);
+
+        pDexDb          = new CDBAccess(DBNameType::DEX, false, fReIndex);
         pDexCache       = new CDexDBCache(pDexDb);
 
-        pBlockTreeDb    = new CBlockTreeDB(nBlockTreeDBCache, false, fReIndex);
+        pBlockIndexDb   = new CBlockIndexDB(false, fReIndex);
+        pBlockDb        = new CDBAccess(DBNameType::BLOCK, false, fReIndex);
+        pBlockCache     = new CBlockDBCache(pBlockDb);
 
-        pLogDb          = new CDBAccess(DBNameType::LOG, nAccountDBCache, false, fReIndex); //TODO fix cache size
+        pLogDb          = new CDBAccess(DBNameType::LOG, false, fReIndex);
         pLogCache       = new CLogDBCache(pLogDb);
 
-        pTxReceiptDb    = new CDBAccess(DBNameType::RECEIPT, nAccountDBCache, false, fReIndex); //TODO fix cache size
-        pTxReceiptCache = new CTxReceiptDBCache(pTxReceiptDb);
+        pReceiptDb      = new CDBAccess(DBNameType::RECEIPT, false, fReIndex);
+        pReceiptCache   = new CTxReceiptDBCache(pReceiptDb);
 
         // memory-only cache
         pTxCache        = new CTxMemCache();
@@ -275,22 +284,27 @@ public:
     ~CCacheDBManager() {
         delete pSysParamCache;  pSysParamCache = nullptr;
         delete pAccountCache;   pAccountCache = nullptr;
+        delete pAssetCache;     pAssetCache = nullptr;
         delete pContractCache;  pContractCache = nullptr;
         delete pDelegateCache;  pDelegateCache = nullptr;
         delete pCdpCache;       pCdpCache = nullptr;
+        delete pClosedCdpCache; pClosedCdpCache = nullptr;
         delete pDexCache;       pDexCache = nullptr;
         delete pLogCache;       pLogCache = nullptr;
-        delete pTxReceiptCache; pTxReceiptCache = nullptr;
+        delete pReceiptCache;   pReceiptCache = nullptr;
 
         delete pSysParamDb;     pSysParamDb = nullptr;
         delete pAccountDb;      pAccountDb = nullptr;
+        delete pAssetDb;        pAssetDb = nullptr;
         delete pContractDb;     pContractDb = nullptr;
         delete pDelegateDb;     pDelegateDb = nullptr;
-        delete pBlockTreeDb;    pBlockTreeDb = nullptr;
+        delete pBlockIndexDb;   pBlockIndexDb = nullptr;
+        delete pBlockCache;     pBlockCache = nullptr;
         delete pCdpDb;          pCdpDb = nullptr;
+        delete pClosedCdpDb;    pClosedCdpDb = nullptr;
         delete pDexDb;          pDexDb = nullptr;
         delete pLogDb;          pLogDb = nullptr;
-        delete pTxReceiptDb;    pTxReceiptDb = nullptr;
+        delete pReceiptDb;      pReceiptDb = nullptr;
 
         // memory-only cache
         delete pTxCache;        pTxCache = nullptr;
@@ -298,26 +312,30 @@ public:
     }
 
     bool Flush() {
-        if (pSysParamCache)
-            pSysParamCache->Flush();
+        if (pSysParamCache) pSysParamCache->Flush();
 
-        if (pAccountCache)
-            pAccountCache->Flush();
+        if (pBlockIndexDb) pBlockIndexDb->Flush();
+        if (pBlockCache) pBlockCache->Flush();
 
-        if (pContractCache)
-            pContractCache->Flush();
+        if (pAccountCache) pAccountCache->Flush();
 
-        if (pDelegateDb)
-            pDelegateCache->Flush();
+        if (pAssetCache) pAssetCache->Flush();
 
-        if (pCdpCache)
-            pCdpCache->Flush();
+        if (pContractCache) pContractCache->Flush();
 
-        if (pBlockTreeDb)
-            pBlockTreeDb->Flush();
+        if (pDelegateCache) pDelegateCache->Flush();
 
-        if (pLogCache)
-            pLogCache->Flush();
+        if (pCdpCache) pCdpCache->Flush();
+
+        if (pClosedCdpCache) pClosedCdpCache->Flush();
+
+        if (pDexCache) pDexCache->Flush();
+
+        if (pBlockCache) pBlockCache->Flush();
+
+        if (pLogCache) pLogCache->Flush();
+
+        if (pReceiptCache) pReceiptCache->Flush();
 
         // Memory only cache, not bother to flush.
         // if (pTxCache)
@@ -340,7 +358,8 @@ public:
     vector<CTxUndo> vtxundo;
 
     IMPLEMENT_SERIALIZE(
-        READWRITE(vtxundo);)
+        READWRITE(vtxundo);
+    )
 
     bool WriteToDisk(CDiskBlockPos &pos, const uint256 &blockHash) {
         // Open history file to append
@@ -349,14 +368,14 @@ public:
             return ERRORMSG("CBlockUndo::WriteToDisk : OpenUndoFile failed");
 
         // Write index header
-        unsigned int nSize = fileout.GetSerializeSize(*this);
+        uint32_t nSize = fileout.GetSerializeSize(*this);
         fileout << FLATDATA(SysCfg().MessageStart()) << nSize;
 
         // Write undo data
         long fileOutPos = ftell(fileout);
         if (fileOutPos < 0)
             return ERRORMSG("CBlockUndo::WriteToDisk : ftell failed");
-        pos.nPos = (unsigned int)fileOutPos;
+        pos.nPos = (uint32_t)fileOutPos;
         fileout << *this;
 
         // calculate & write checksum
@@ -440,7 +459,7 @@ public:
 class CPartialMerkleTree {
 protected:
     // the total number of transactions in the block
-    unsigned int nTransactions;
+    uint32_t nTransactions;
 
     // node-is-parent-of-matched-txid bits
     vector<bool> vBits;
@@ -452,36 +471,36 @@ protected:
     bool fBad;
 
     // helper function to efficiently calculate the number of nodes at given height in the merkle tree
-    unsigned int CalcTreeWidth(int height) {
+    uint32_t CalcTreeWidth(int32_t height) {
         return (nTransactions + (1 << height) - 1) >> height;
     }
 
     // calculate the hash of a node in the merkle tree (at leaf level: the txid's themself)
-    uint256 CalcHash(int height, unsigned int pos, const vector<uint256> &vTxid);
+    uint256 CalcHash(int32_t height, uint32_t pos, const vector<uint256> &vTxid);
 
     // recursive function that traverses tree nodes, storing the data as bits and hashes
-    void TraverseAndBuild(int height, unsigned int pos, const vector<uint256> &vTxid, const vector<bool> &vMatch);
+    void TraverseAndBuild(int32_t height, uint32_t pos, const vector<uint256> &vTxid, const vector<bool> &vMatch);
 
     // recursive function that traverses tree nodes, consuming the bits and hashes produced by TraverseAndBuild.
     // it returns the hash of the respective node.
-    uint256 TraverseAndExtract(int height, unsigned int pos, unsigned int &nBitsUsed, unsigned int &nHashUsed, vector<uint256> &vMatch);
+    uint256 TraverseAndExtract(int32_t height, uint32_t pos, uint32_t &nBitsUsed, uint32_t &nHashUsed, vector<uint256> &vMatch);
 
 public:
     // serialization implementation
     IMPLEMENT_SERIALIZE(
         READWRITE(nTransactions);
         READWRITE(vHash);
-        vector<unsigned char> vBytes;
+        vector<uint8_t> vBytes;
         if (fRead) {
             READWRITE(vBytes);
             CPartialMerkleTree &us = *(const_cast<CPartialMerkleTree *>(this));
             us.vBits.resize(vBytes.size() * 8);
-            for (unsigned int p = 0; p < us.vBits.size(); p++)
+            for (uint32_t p = 0; p < us.vBits.size(); p++)
                 us.vBits[p] = (vBytes[p / 8] & (1 << (p % 8))) != 0;
             us.fBad = false;
         } else {
             vBytes.resize((vBits.size() + 7) / 8);
-            for (unsigned int p = 0; p < vBits.size(); p++)
+            for (uint32_t p = 0; p < vBits.size(); p++)
                 vBytes[p / 8] |= vBits[p] << (p % 8);
             READWRITE(vBytes);
         })
@@ -505,14 +524,14 @@ private:
         MODE_INVALID,  // network rule violation (DoS value may be set)
         MODE_ERROR,    // run-time error
     } mode;
-    int nDoS;
+    int32_t nDoS;
     string rejectReason;
     uint8_t rejectCode;
     bool corruptionPossible;
 
 public:
     CValidationState() : mode(MODE_VALID), nDoS(0), corruptionPossible(false) {}
-    bool DoS(int level, bool ret = false, uint8_t rejectCodeIn = 0, string rejectReasonIn = "",
+    bool DoS(int32_t level, bool ret = false, uint8_t rejectCodeIn = 0, string rejectReasonIn = "",
              bool corruptionIn = false) {
         rejectCode         = rejectCodeIn;
         rejectReason       = rejectReasonIn;
@@ -539,7 +558,7 @@ public:
     bool IsValid() const { return mode == MODE_VALID; }
     bool IsInvalid() const { return mode == MODE_INVALID; }
     bool IsError() const { return mode == MODE_ERROR; }
-    bool IsInvalid(int &nDoSOut) const {
+    bool IsInvalid(int32_t &nDoSOut) const {
         if (IsInvalid()) {
             nDoSOut = nDoS;
             return true;
@@ -554,13 +573,11 @@ public:
 /** The currently best known chain of headers (some of which may be invalid). */
 extern CChain chainMostWork;
 extern CCacheDBManager *pCdMan;
-/** nSyncTipHight  */
-extern int nSyncTipHeight;
-extern std::tuple<bool, boost::thread *> RunCoin(int argc, char *argv[]);
+extern int32_t nSyncTipHeight;
+extern std::tuple<bool, boost::thread *> RunCoin(int32_t argc, char *argv[]);
+extern string externalIp;
 
 bool EraseBlockIndexFromSet(CBlockIndex *pIndex);
-
-uint64_t GetBlockSubsidy(int height);
 
 /** Used to relay blocks as header + vector<merkle branch>
  * to filtered nodes.
@@ -574,7 +591,7 @@ public:
 public:
     // Public only for unit testing and relay testing
     // (not relayed)
-    vector<pair<unsigned int, uint256> > vMatchedTxn;
+    vector<pair<uint32_t, uint256> > vMatchedTxn;
 
     // Create from a CBlock, filtering transactions according to filter
     // Note that this will call IsRelevantAndUpdate on the filter for each transaction,
@@ -626,7 +643,6 @@ bool DisconnectBlockFromTip(CValidationState &state);
 /** Mark a block as invalid. */
 bool InvalidateBlock(CValidationState &state, CBlockIndex *pIndex);
 
-int64_t GetBlockValue(int height, int64_t nFees);
 /** Open a block file (blk?????.dat) */
 FILE *OpenBlockFile(const CDiskBlockPos &pos, bool fReadOnly = false);
 
@@ -678,37 +694,51 @@ bool ReadTxFromDisk(const CTxCord txCord, std::shared_ptr<TxType> &pTx) {
 }
 
 // global overloadding fun
-inline unsigned int GetSerializeSize(const std::shared_ptr<CBaseTx> &pa, int nType, int nVersion) {
+inline uint32_t GetSerializeSize(const std::shared_ptr<CBaseTx> &pa, int32_t nType, int32_t nVersion) {
     return pa->GetSerializeSize(nType, nVersion) + 1;
 }
 
 template <typename Stream>
-void Serialize(Stream &os, const std::shared_ptr<CBaseTx> &pa, int nType, int nVersion) {
-    unsigned char nTxType = pa->nTxType;
+void Serialize(Stream &os, const std::shared_ptr<CBaseTx> &pa, int32_t nType, int32_t nVersion) {
+    uint8_t nTxType = pa->nTxType;
     Serialize(os, nTxType, nType, nVersion);
     switch (pa->nTxType) {
+        case BLOCK_REWARD_TX:
+            Serialize(os, *((CBlockRewardTx *)(pa.get())), nType, nVersion); break;
         case ACCOUNT_REGISTER_TX:
             Serialize(os, *((CAccountRegisterTx *)(pa.get())), nType, nVersion); break;
         case BCOIN_TRANSFER_TX:
             Serialize(os, *((CBaseCoinTransferTx *)(pa.get())), nType, nVersion); break;
         case LCONTRACT_INVOKE_TX:
             Serialize(os, *((CLuaContractInvokeTx *)(pa.get())), nType, nVersion); break;
-        case BLOCK_REWARD_TX:
-            Serialize(os, *((CBlockRewardTx *)(pa.get())), nType, nVersion); break;
         case LCONTRACT_DEPLOY_TX:
             Serialize(os, *((CLuaContractDeployTx *)(pa.get())), nType, nVersion); break;
         case DELEGATE_VOTE_TX:
             Serialize(os, *((CDelegateVoteTx *)(pa.get())), nType, nVersion); break;
+
         case BCOIN_TRANSFER_MTX:
             Serialize(os, *((CMulsigTx *)(pa.get())), nType, nVersion); break;
+        case UCOIN_STAKE_TX:
+            Serialize(os, *((CCoinStakeTx *)(pa.get())), nType, nVersion); break;
+        case ASSET_ISSUE_TX:
+            Serialize(os, *((CAssetIssueTx *)(pa.get())), nType, nVersion); break;
+        case ASSET_UPDATE_TX:
+            Serialize(os, *((CAssetUpdateTx *)(pa.get())), nType, nVersion); break;
 
-        case UCOIN_BLOCK_REWARD_TX:
-            Serialize(os, *((CUCoinBlockRewardTx *)(pa.get())), nType, nVersion); break;
-        // TODO: UCOIN_LCONTRACT_INVOKE_TX
         case UCOIN_TRANSFER_TX:
             Serialize(os, *((CCoinTransferTx *)(pa.get())), nType, nVersion); break;
         case UCOIN_REWARD_TX:
             Serialize(os, *((CCoinRewardTx *)(pa.get())), nType, nVersion); break;
+        case UCOIN_BLOCK_REWARD_TX:
+            Serialize(os, *((CUCoinBlockRewardTx *)(pa.get())), nType, nVersion); break;
+        case UCONTRACT_DEPLOY_TX:
+            Serialize(os, *((CUniversalContractDeployTx *)(pa.get())), nType, nVersion); break;
+        case UCONTRACT_INVOKE_TX:
+            Serialize(os, *((CUniversalContractInvokeTx *)(pa.get())), nType, nVersion); break;
+        case PRICE_FEED_TX:
+            Serialize(os, *((CPriceFeedTx *)(pa.get())), nType, nVersion); break;
+        case PRICE_MEDIAN_TX:
+            Serialize(os, *((CBlockPriceMedianTx *)(pa.get())), nType, nVersion); break;
 
         case CDP_STAKE_TX:
             Serialize(os, *((CCDPStakeTx *)(pa.get())), nType, nVersion); break;
@@ -716,16 +746,6 @@ void Serialize(Stream &os, const std::shared_ptr<CBaseTx> &pa, int nType, int nV
             Serialize(os, *((CCDPRedeemTx *)(pa.get())), nType, nVersion); break;
         case CDP_LIQUIDATE_TX:
             Serialize(os, *((CCDPLiquidateTx *)(pa.get())), nType, nVersion); break;
-
-        case PRICE_FEED_TX:
-            Serialize(os, *((CPriceFeedTx *)(pa.get())), nType, nVersion); break;
-        case PRICE_MEDIAN_TX:
-            Serialize(os, *((CBlockPriceMedianTx *)(pa.get())), nType, nVersion); break;
-
-        // TODO: SFC_PARAM_MTX
-
-        case FCOIN_STAKE_TX:
-            Serialize(os, *((CFcoinStakeTx *)(pa.get())), nType, nVersion); break;
 
         case DEX_TRADE_SETTLE_TX:
             Serialize(os, *((CDEXSettleTx *)(pa.get())), nType, nVersion); break;
@@ -745,15 +765,19 @@ void Serialize(Stream &os, const std::shared_ptr<CBaseTx> &pa, int nType, int nV
                 pa->nTxType, GetTxType(pa->nTxType)));
             break;
     }
-
 }
 
 
 template <typename Stream>
-void Unserialize(Stream &is, std::shared_ptr<CBaseTx> &pa, int nType, int nVersion) {
-    unsigned char nTxType;
+void Unserialize(Stream &is, std::shared_ptr<CBaseTx> &pa, int32_t nType, int32_t nVersion) {
+    uint8_t nTxType;
     is.read((char *)&(nTxType), sizeof(nTxType));
     switch((TxType)nTxType) {
+        case BLOCK_REWARD_TX: {
+            pa = std::make_shared<CBlockRewardTx>();
+            Unserialize(is, *((CBlockRewardTx *)(pa.get())), nType, nVersion);
+            break;
+        }
         case ACCOUNT_REGISTER_TX: {
             pa = std::make_shared<CAccountRegisterTx>();
             Unserialize(is, *((CAccountRegisterTx *)(pa.get())), nType, nVersion);
@@ -769,11 +793,6 @@ void Unserialize(Stream &is, std::shared_ptr<CBaseTx> &pa, int nType, int nVersi
             Unserialize(is, *((CLuaContractInvokeTx *)(pa.get())), nType, nVersion);
             break;
         }
-        case BLOCK_REWARD_TX: {
-            pa = std::make_shared<CBlockRewardTx>();
-            Unserialize(is, *((CBlockRewardTx *)(pa.get())), nType, nVersion);
-            break;
-        }
         case LCONTRACT_DEPLOY_TX: {
             pa = std::make_shared<CLuaContractDeployTx>();
             Unserialize(is, *((CLuaContractDeployTx *)(pa.get())), nType, nVersion);
@@ -784,18 +803,31 @@ void Unserialize(Stream &is, std::shared_ptr<CBaseTx> &pa, int nType, int nVersi
             Unserialize(is, *((CDelegateVoteTx *)(pa.get())), nType, nVersion);
             break;
         }
+
         case BCOIN_TRANSFER_MTX: {
             pa = std::make_shared<CMulsigTx>();
             Unserialize(is, *((CMulsigTx *)(pa.get())), nType, nVersion);
             break;
         }
 
-        case UCOIN_BLOCK_REWARD_TX: {
-            pa = std::make_shared<CUCoinBlockRewardTx>();
-            Unserialize(is, *((CUCoinBlockRewardTx *)(pa.get())), nType, nVersion);
+        case UCOIN_STAKE_TX: {
+            pa = std::make_shared<CCoinStakeTx>();
+            Unserialize(is, *((CCoinStakeTx *)(pa.get())), nType, nVersion);
             break;
         }
-        // TODO: UCOIN_LCONTRACT_INVOKE_TX
+
+        case ASSET_ISSUE_TX: {
+            pa = std::make_shared<CAssetIssueTx>();
+            Unserialize(is, *((CAssetIssueTx *)(pa.get())), nType, nVersion);
+            break;
+        }
+
+        case ASSET_UPDATE_TX: {
+            pa = std::make_shared<CAssetUpdateTx>();
+            Unserialize(is, *((CAssetUpdateTx *)(pa.get())), nType, nVersion);
+            break;
+        }
+
         case UCOIN_TRANSFER_TX: {
             pa = std::make_shared<CCoinTransferTx>();
             Unserialize(is, *((CCoinTransferTx *)(pa.get())), nType, nVersion);
@@ -804,6 +836,31 @@ void Unserialize(Stream &is, std::shared_ptr<CBaseTx> &pa, int nType, int nVersi
         case UCOIN_REWARD_TX: {
             pa = std::make_shared<CCoinRewardTx>();
             Unserialize(is, *((CCoinRewardTx *)(pa.get())), nType, nVersion);
+            break;
+        }
+        case UCOIN_BLOCK_REWARD_TX: {
+            pa = std::make_shared<CUCoinBlockRewardTx>();
+            Unserialize(is, *((CUCoinBlockRewardTx *)(pa.get())), nType, nVersion);
+            break;
+        }
+        case UCONTRACT_DEPLOY_TX: {
+            pa = std::make_shared<CUniversalContractDeployTx>();
+            Unserialize(is, *((CUniversalContractDeployTx *)(pa.get())), nType, nVersion);
+            break;
+        }
+        case UCONTRACT_INVOKE_TX: {
+            pa = std::make_shared<CUniversalContractInvokeTx>();
+            Unserialize(is, *((CUniversalContractInvokeTx *)(pa.get())), nType, nVersion);
+            break;
+        }
+        case PRICE_FEED_TX: {
+            pa = std::make_shared<CPriceFeedTx>();
+            Unserialize(is, *((CPriceFeedTx *)(pa.get())), nType, nVersion);
+            break;
+        }
+        case PRICE_MEDIAN_TX: {
+            pa = std::make_shared<CBlockPriceMedianTx>();
+            Unserialize(is, *((CBlockPriceMedianTx *)(pa.get())), nType, nVersion);
             break;
         }
 
@@ -820,27 +877,6 @@ void Unserialize(Stream &is, std::shared_ptr<CBaseTx> &pa, int nType, int nVersi
         case CDP_LIQUIDATE_TX: {
             pa = std::make_shared<CCDPLiquidateTx>();
             Unserialize(is, *((CCDPLiquidateTx *)(pa.get())), nType, nVersion);
-            break;
-        }
-
-        case PRICE_FEED_TX: {
-            pa = std::make_shared<CPriceFeedTx>();
-            Unserialize(is, *((CPriceFeedTx *)(pa.get())), nType, nVersion);
-            break;
-        }
-        case PRICE_MEDIAN_TX: {
-            pa = std::make_shared<CBlockPriceMedianTx>();
-            Unserialize(is, *((CBlockPriceMedianTx *)(pa.get())), nType, nVersion);
-            break;
-        }
-
-        // TODO: SFC_PARAM_MTX
-        // TODO: SFC_GLOBAL_HALT_MTX
-        // TODO: SFC_GLOBAL_SETTLE_MTX
-
-        case FCOIN_STAKE_TX: {
-            pa = std::make_shared<CFcoinStakeTx>();
-            Unserialize(is, *((CFcoinStakeTx *)(pa.get())), nType, nVersion);
             break;
         }
 

@@ -61,7 +61,7 @@ bool AppInit(int argc, char* argv[], boost::thread_group& threadGroup) {
         //
         // If Qt is used, parameters/coin.conf are parsed in qt/Coin.cpp's main()
         CBaseParams::InitializeParams(argc, argv);
-        SysCfg().InitialConfig();
+        SysCfg().InitializeConfig();
 
         if (SysCfg().IsArgCount("-?") || SysCfg().IsArgCount("--help")) {
             // First part of help message is specific to coind / RPC client
@@ -82,7 +82,8 @@ bool AppInit(int argc, char* argv[], boost::thread_group& threadGroup) {
         // Command-line RPC
         bool fCommandLine = false;
         for (int i = 1; i < argc; i++)
-            if (!IsSwitchChar(argv[i][0]) && !boost::algorithm::istarts_with(argv[i], "Coin:")) fCommandLine = true;
+            if (!IsSwitchChar(argv[i][0]) && !boost::algorithm::istarts_with(argv[i], "Coin:"))
+                fCommandLine = true;
 
         if (fCommandLine) {
             int ret = CommandLineRPC(argc, argv);
@@ -110,7 +111,7 @@ bool AppInit(int argc, char* argv[], boost::thread_group& threadGroup) {
             if (sid < 0) fprintf(stderr, "Error: setsid() returned %d errno %d\n", sid, errno);
         }
 #endif
-        SysCfg().SoftSetBoolArg("-server", true);
+        SysCfg().SoftSetBoolArg("-rpcserver", true);
 
         fRet = AppInit(threadGroup);
     } catch (std::exception& e) {

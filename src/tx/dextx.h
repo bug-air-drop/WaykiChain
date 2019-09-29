@@ -7,6 +7,7 @@
 #define TX_DEX_H
 
 #include "entities/asset.h"
+#include "entities/dexorder.h"
 #include "tx.h"
 #include "persistence/dexdb.h"
 
@@ -14,19 +15,17 @@ class CDEXOrderBaseTx : public CBaseTx {
 public:
     using CBaseTx::CBaseTx;
 
-    virtual void GetOrderDetail(CDEXOrderDetail &orderDetail) = 0;
-
 public:
     bool CheckOrderAmountRange(CValidationState &state, const string &title,
-                             const TokenSymbol &symbol, int64_t amount);
+                             const TokenSymbol &symbol, const int64_t amount);
 
     bool CheckOrderPriceRange(CValidationState &state, const string &title,
                               const TokenSymbol &coin_symbol, const TokenSymbol &asset_symbol,
-                              int64_t price);
+                              const int64_t price);
     bool CheckOrderSymbols(CValidationState &state, const string &title,
                            const TokenSymbol &coinSymbol, const TokenSymbol &assetSymbol);
 public:
-    static uint64_t CalcCoinAmount(uint64_t assetAmount, uint64_t price);
+    static uint64_t CalcCoinAmount(uint64_t assetAmount, const uint64_t price);
 };
 
 class CDEXBuyLimitOrderTx : public CDEXOrderBaseTx {
@@ -34,15 +33,11 @@ class CDEXBuyLimitOrderTx : public CDEXOrderBaseTx {
 public:
     CDEXBuyLimitOrderTx() : CDEXOrderBaseTx(DEX_LIMIT_BUY_ORDER_TX) {}
 
-    CDEXBuyLimitOrderTx(const CBaseTx *pBaseTx): CDEXOrderBaseTx(DEX_LIMIT_BUY_ORDER_TX) {
-        assert(DEX_LIMIT_BUY_ORDER_TX == pBaseTx->nTxType);
-        *this = *(CDEXBuyLimitOrderTx *)pBaseTx;
-    }
-
-    CDEXBuyLimitOrderTx(const CUserID &txUidIn, int validHeightIn, uint64_t feesIn,
-                   TokenSymbol coinSymbol, TokenSymbol assetSymbol,
-                   uint64_t assetAmountIn, uint64_t bid_priceIn)
-        : CDEXOrderBaseTx(DEX_LIMIT_BUY_ORDER_TX, txUidIn, validHeightIn, feesIn),
+    CDEXBuyLimitOrderTx(const CUserID &txUidIn, int32_t validHeightIn, const TokenSymbol &feeSymbol,
+                        uint64_t fees, const TokenSymbol &coinSymbol,
+                        const TokenSymbol &assetSymbol, uint64_t assetAmountIn,
+                        uint64_t bid_priceIn)
+        : CDEXOrderBaseTx(DEX_LIMIT_BUY_ORDER_TX, txUidIn, validHeightIn, feeSymbol, fees),
           coin_symbol(coinSymbol),
           asset_symbol(assetSymbol),
           asset_amount(assetAmountIn),
@@ -53,9 +48,10 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
+        READWRITE(fee_symbol);
         READWRITE(VARINT(llFees));
         READWRITE(coin_symbol);
         READWRITE(asset_symbol);
@@ -68,30 +64,25 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss  << VARINT(nVersion) << (uint8_t)nTxType << VARINT(nValidHeight) << txUid << VARINT(llFees)
-                << coin_symbol << asset_symbol << asset_amount << bid_price;
+            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(valid_height) << txUid << fee_symbol << VARINT(llFees)
+               << coin_symbol << asset_symbol << VARINT(asset_amount) << VARINT(bid_price);
             sigHash = ss.GetHash();
         }
 
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return map<TokenSymbol, uint64_t>{{SYMB::WICC, 0}}; }
-    virtual std::shared_ptr<CBaseTx> GetNewInstance() { return std::make_shared<CDEXBuyLimitOrderTx>(this); }
+    virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CDEXBuyLimitOrderTx>(*this); }
     string ToString(CAccountDBCache &accountCache);
     virtual Object ToJson(const CAccountDBCache &accountCache) const; //json-rpc usage
 
-    virtual bool CheckTx(int height, CCacheWrapper &cw, CValidationState &state);
-    virtual bool ExecuteTx(int height, int index, CCacheWrapper &cw, CValidationState &state);
-public: // derive from CDEXOrderBaseTx
-    virtual void GetOrderDetail(CDEXOrderDetail &orderDetail);
-
+    virtual bool CheckTx(CTxExecuteContext &context);
+    virtual bool ExecuteTx(CTxExecuteContext &context);
 private:
-    TokenSymbol coin_symbol;          //!< coin type (wusd) to buy asset
-    TokenSymbol asset_symbol;        //!< asset type
-    uint64_t asset_amount;       //!< amount of target asset to buy
-    uint64_t bid_price;          //!< bidding price in coin_symbol willing to buy
-
+    TokenSymbol coin_symbol;   //!< coin type (wusd) to buy asset
+    TokenSymbol asset_symbol;  //!< asset type
+    uint64_t asset_amount;     //!< amount of target asset to buy
+    uint64_t bid_price;        //!< bidding price in coin_symbol willing to buy
 };
 
 class CDEXSellLimitOrderTx : public CDEXOrderBaseTx {
@@ -99,29 +90,24 @@ class CDEXSellLimitOrderTx : public CDEXOrderBaseTx {
 public:
     CDEXSellLimitOrderTx() : CDEXOrderBaseTx(DEX_LIMIT_SELL_ORDER_TX) {}
 
-    CDEXSellLimitOrderTx(const CBaseTx *pBaseTx): CDEXOrderBaseTx(DEX_LIMIT_SELL_ORDER_TX) {
-        assert(DEX_LIMIT_SELL_ORDER_TX == pBaseTx->nTxType);
-        *this = *(CDEXSellLimitOrderTx *)pBaseTx;
-    }
-
-    CDEXSellLimitOrderTx(const CUserID &txUidIn, int validHeightIn, uint64_t feesIn,
-                    TokenSymbol coinSymbol, TokenSymbol assetSymbol,
-                    uint64_t assetAmount, uint64_t askPrice)
-        : CDEXOrderBaseTx(DEX_LIMIT_SELL_ORDER_TX, txUidIn, validHeightIn, feesIn) {
-        coin_symbol   = coinSymbol;
-        asset_symbol  = assetSymbol;
-        asset_amount = assetAmount;
-        ask_price   = askPrice;
-    }
+    CDEXSellLimitOrderTx(const CUserID &txUidIn, int32_t validHeightIn, const TokenSymbol &feeSymbol,
+                         uint64_t fees, TokenSymbol coinSymbol, const TokenSymbol &assetSymbol,
+                         uint64_t assetAmount, uint64_t askPrice)
+        : CDEXOrderBaseTx(DEX_LIMIT_SELL_ORDER_TX, txUidIn, validHeightIn, feeSymbol, fees),
+          coin_symbol(coinSymbol),
+          asset_symbol(assetSymbol),
+          asset_amount(assetAmount),
+          ask_price(askPrice) {}
 
     ~CDEXSellLimitOrderTx() {}
 
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
+        READWRITE(fee_symbol);
         READWRITE(VARINT(llFees));
         READWRITE(coin_symbol);
         READWRITE(asset_symbol);
@@ -134,44 +120,35 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss  << VARINT(nVersion) << (uint8_t)nTxType << VARINT(nValidHeight) << txUid << VARINT(llFees)
-                << coin_symbol << asset_symbol << asset_amount << ask_price;
+            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(valid_height) << txUid << fee_symbol << VARINT(llFees)
+               << coin_symbol << asset_symbol << VARINT(asset_amount) << VARINT(ask_price);
             sigHash = ss.GetHash();
         }
 
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return map<TokenSymbol, uint64_t>{{SYMB::WICC, 0}}; }
-    virtual std::shared_ptr<CBaseTx> GetNewInstance() { return std::make_shared<CDEXSellLimitOrderTx>(this); }
+    virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CDEXSellLimitOrderTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache); //logging usage
     virtual Object ToJson(const CAccountDBCache &accountCache) const; //json-rpc usage
 
-    virtual bool CheckTx(int height, CCacheWrapper &cw, CValidationState &state);
-    virtual bool ExecuteTx(int height, int index, CCacheWrapper &cw, CValidationState &state);
-public: // derive from CDEXOrderBaseTx
-    virtual void GetOrderDetail(CDEXOrderDetail &orderDetail);
-
+    virtual bool CheckTx(CTxExecuteContext &context);
+    virtual bool ExecuteTx(CTxExecuteContext &context);
 private:
-    TokenSymbol coin_symbol;       //!< coin type (wusd) to sell asset
-    TokenSymbol asset_symbol;     //!< holding asset type (wicc or wgrt) to sell in coin_symbol
-    uint64_t asset_amount;    //!< amount of holding asset to sell
-    uint64_t ask_price;       //!< asking price in coin_symbol willing to sell
-
+    TokenSymbol coin_symbol;   //!< coin type (wusd) to sell asset
+    TokenSymbol asset_symbol;  //!< holding asset type (wicc or wgrt) to sell in coin_symbol
+    uint64_t asset_amount;     //!< amount of holding asset to sell
+    uint64_t ask_price;        //!< asking price in coin_symbol willing to sell
 };
 
 class CDEXBuyMarketOrderTx : public CDEXOrderBaseTx {
 public:
     CDEXBuyMarketOrderTx() : CDEXOrderBaseTx(DEX_MARKET_BUY_ORDER_TX) {}
 
-    CDEXBuyMarketOrderTx(const CBaseTx *pBaseTx): CDEXOrderBaseTx(DEX_MARKET_BUY_ORDER_TX) {
-        assert(DEX_MARKET_BUY_ORDER_TX == pBaseTx->nTxType);
-        *this = *(CDEXBuyMarketOrderTx *)pBaseTx;
-    }
-
-    CDEXBuyMarketOrderTx(const CUserID &txUidIn, int validHeightIn, uint64_t feesIn,
-                         TokenSymbol coinSymbol, TokenSymbol assetSymbol, uint64_t coinAmountIn)
-        : CDEXOrderBaseTx(DEX_MARKET_BUY_ORDER_TX, txUidIn, validHeightIn, feesIn),
+    CDEXBuyMarketOrderTx(const CUserID &txUidIn, int32_t validHeightIn, const TokenSymbol &feeSymbol,
+                         uint64_t fees, TokenSymbol coinSymbol, const TokenSymbol &assetSymbol,
+                         uint64_t coinAmountIn)
+        : CDEXOrderBaseTx(DEX_MARKET_BUY_ORDER_TX, txUidIn, validHeightIn, feeSymbol, fees),
           coin_symbol(coinSymbol),
           asset_symbol(assetSymbol),
           coin_amount(coinAmountIn) {}
@@ -181,8 +158,10 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
+
+        READWRITE(fee_symbol);
         READWRITE(VARINT(llFees));
         READWRITE(coin_symbol);
         READWRITE(asset_symbol);
@@ -194,42 +173,34 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss  << VARINT(nVersion) << (uint8_t)nTxType << VARINT(nValidHeight) << txUid << VARINT(llFees)
-                << coin_symbol << asset_symbol << coin_amount;
+            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(valid_height) << txUid << fee_symbol << VARINT(llFees)
+               << coin_symbol << asset_symbol << VARINT(coin_amount);
             sigHash = ss.GetHash();
         }
 
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return map<TokenSymbol, uint64_t>{{SYMB::WICC, 0}}; }
-    virtual std::shared_ptr<CBaseTx> GetNewInstance() { return std::make_shared<CDEXBuyMarketOrderTx>(this); }
+    virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CDEXBuyMarketOrderTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache); //logging usage
     virtual Object ToJson(const CAccountDBCache &accountCache) const; //json-rpc usage
 
-    virtual bool CheckTx(int height, CCacheWrapper &cw, CValidationState &state);
-    virtual bool ExecuteTx(int height, int index, CCacheWrapper &cw, CValidationState &state);
-
-public: // derive from CDEXOrderBaseTx
-    virtual void GetOrderDetail(CDEXOrderDetail &orderDetail);
+    virtual bool CheckTx(CTxExecuteContext &context);
+    virtual bool ExecuteTx(CTxExecuteContext &context);
 private:
-    TokenSymbol coin_symbol;      //!< coin type (wusd) to buy asset
-    TokenSymbol asset_symbol;    //!< asset type
-    uint64_t coin_amount;    //!< amount of target coin to spend for buying asset
+    TokenSymbol coin_symbol;   //!< coin type (wusd) to buy asset
+    TokenSymbol asset_symbol;  //!< asset type
+    uint64_t coin_amount;      //!< amount of target coin to spend for buying asset
 };
 
 class CDEXSellMarketOrderTx : public CDEXOrderBaseTx {
 public:
     CDEXSellMarketOrderTx() : CDEXOrderBaseTx(DEX_MARKET_SELL_ORDER_TX) {}
 
-    CDEXSellMarketOrderTx(const CBaseTx *pBaseTx): CDEXOrderBaseTx(DEX_MARKET_SELL_ORDER_TX) {
-        assert(DEX_MARKET_SELL_ORDER_TX == pBaseTx->nTxType);
-        *this = *(CDEXSellMarketOrderTx *)pBaseTx;
-    }
-
-    CDEXSellMarketOrderTx(const CUserID &txUidIn, int validHeightIn, uint64_t feesIn,
-                         TokenSymbol coinSymbol, TokenSymbol assetSymbol, uint64_t assetAmountIn)
-        : CDEXOrderBaseTx(DEX_MARKET_SELL_ORDER_TX, txUidIn, validHeightIn, feesIn),
+    CDEXSellMarketOrderTx(const CUserID &txUidIn, int32_t validHeightIn, const TokenSymbol &feeSymbol,
+                          uint64_t fees, TokenSymbol coinSymbol, const TokenSymbol &assetSymbol,
+                          uint64_t assetAmountIn)
+        : CDEXOrderBaseTx(DEX_MARKET_SELL_ORDER_TX, txUidIn, validHeightIn, feeSymbol, fees),
           coin_symbol(coinSymbol),
           asset_symbol(assetSymbol),
           asset_amount(assetAmountIn) {}
@@ -239,9 +210,10 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
+        READWRITE(fee_symbol);
         READWRITE(VARINT(llFees));
         READWRITE(coin_symbol);
         READWRITE(asset_symbol);
@@ -253,52 +225,44 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss  << VARINT(nVersion) << (uint8_t)nTxType << VARINT(nValidHeight) << txUid << VARINT(llFees)
-                << coin_symbol << asset_symbol << asset_amount;
+            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(valid_height) << txUid << fee_symbol << VARINT(llFees)
+               << coin_symbol << asset_symbol << VARINT(asset_amount);
             sigHash = ss.GetHash();
         }
 
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return map<TokenSymbol, uint64_t>{{SYMB::WICC, 0}}; }
-    virtual std::shared_ptr<CBaseTx> GetNewInstance() { return std::make_shared<CDEXSellMarketOrderTx>(this); }
+    virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CDEXSellMarketOrderTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache); //logging usage
     virtual Object ToJson(const CAccountDBCache &accountCache) const; //json-rpc usage
 
-    virtual bool CheckTx(int height, CCacheWrapper &cw, CValidationState &state);
-    virtual bool ExecuteTx(int height, int index, CCacheWrapper &cw, CValidationState &state);
-
-public: // derive from CDEXOrderBaseTx
-    virtual void GetOrderDetail(CDEXOrderDetail &orderDetail);
+    virtual bool CheckTx(CTxExecuteContext &context);
+    virtual bool ExecuteTx(CTxExecuteContext &context);
 private:
-    TokenSymbol coin_symbol;      //!< coin type (wusd) to buy asset
-    TokenSymbol asset_symbol;    //!< asset type
-    uint64_t asset_amount;   //!< amount of target asset to buy
+    TokenSymbol coin_symbol;   //!< coin type (wusd) to buy asset
+    TokenSymbol asset_symbol;  //!< asset type
+    uint64_t asset_amount;     //!< amount of target asset to buy
 };
 
 class CDEXCancelOrderTx : public CBaseTx {
 public:
     CDEXCancelOrderTx() : CBaseTx(DEX_CANCEL_ORDER_TX) {}
 
-    CDEXCancelOrderTx(const CBaseTx *pBaseTx): CBaseTx(DEX_CANCEL_ORDER_TX) {
-        assert(DEX_CANCEL_ORDER_TX == pBaseTx->nTxType);
-        *this = *(CDEXCancelOrderTx *)pBaseTx;
-    }
-
-    CDEXCancelOrderTx(const CUserID &txUidIn, int validHeightIn, uint64_t feesIn,
-                         uint256 orderIdIn)
-        : CBaseTx(DEX_CANCEL_ORDER_TX, txUidIn, validHeightIn, feesIn),
-          orderId(orderIdIn){}
+    CDEXCancelOrderTx(const CUserID &txUidIn, int32_t validHeightIn, const TokenSymbol &feeSymbol,
+                      uint64_t fees, uint256 orderIdIn)
+        : CBaseTx(DEX_CANCEL_ORDER_TX, txUidIn, validHeightIn, feeSymbol, fees),
+          orderId(orderIdIn) {}
 
     ~CDEXCancelOrderTx() {}
 
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
+        READWRITE(fee_symbol);
         READWRITE(VARINT(llFees));
         READWRITE(orderId);
 
@@ -308,20 +272,20 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(nValidHeight) << txUid << VARINT(llFees) << orderId;
+            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(valid_height) << txUid << fee_symbol << VARINT(llFees)
+               << orderId;
             sigHash = ss.GetHash();
         }
 
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return map<TokenSymbol, uint64_t>{{SYMB::WICC, 0}}; }
-    virtual std::shared_ptr<CBaseTx> GetNewInstance() { return std::make_shared<CDEXCancelOrderTx>(this); }
+    virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CDEXCancelOrderTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache); //logging usage
     virtual Object ToJson(const CAccountDBCache &accountCache) const; //json-rpc usage
 
-    virtual bool CheckTx(int height, CCacheWrapper &cw, CValidationState &state);
-    virtual bool ExecuteTx(int height, int index, CCacheWrapper &cw, CValidationState &state);
+    virtual bool CheckTx(CTxExecuteContext &context);
+    virtual bool ExecuteTx(CTxExecuteContext &context);
 public:
     uint256  orderId;       //!< id of oder need to be canceled.
 };
@@ -340,6 +304,8 @@ struct DEXDealItem  {
         READWRITE(VARINT(dealCoinAmount));
         READWRITE(VARINT(dealAssetAmount));
     )
+
+    string ToString() const;
 };
 
 class CDEXSettleTx: public CBaseTx {
@@ -347,24 +313,20 @@ class CDEXSettleTx: public CBaseTx {
 public:
     CDEXSettleTx() : CBaseTx(DEX_TRADE_SETTLE_TX) {}
 
-    CDEXSettleTx(const CBaseTx *pBaseTx): CBaseTx(DEX_TRADE_SETTLE_TX) {
-        assert(DEX_TRADE_SETTLE_TX == pBaseTx->nTxType);
-        *this = *(CDEXSettleTx *)pBaseTx;
-    }
-
-    CDEXSettleTx(const CUserID &txUidIn, int validHeightIn, uint64_t feesIn,
-        const vector<DEXDealItem> &dealItemsIn):
-        CBaseTx(DEX_TRADE_SETTLE_TX, txUidIn, validHeightIn, feesIn), dealItems(dealItemsIn) {
-    }
+    CDEXSettleTx(const CUserID &txUidIn, int32_t validHeightIn, const TokenSymbol &feeSymbol,
+                 uint64_t fees, const vector<DEXDealItem> &dealItemsIn)
+        : CBaseTx(DEX_TRADE_SETTLE_TX, txUidIn, validHeightIn, feeSymbol, fees),
+          dealItems(dealItemsIn) {}
 
     ~CDEXSettleTx() {}
 
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
+        READWRITE(fee_symbol);
         READWRITE(VARINT(llFees));
         READWRITE(dealItems);
 
@@ -374,7 +336,8 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(nValidHeight) << txUid << VARINT(llFees) << dealItems;
+            ss << VARINT(nVersion) << (uint8_t)nTxType << VARINT(valid_height) << txUid << fee_symbol << VARINT(llFees)
+               << dealItems;
             sigHash = ss.GetHash();
         }
 
@@ -387,15 +350,16 @@ public:
 
     vector<DEXDealItem>& GetDealItems() { return dealItems; }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return map<TokenSymbol, uint64_t>{{SYMB::WICC, 0}}; }
-    virtual std::shared_ptr<CBaseTx> GetNewInstance() { return std::make_shared<CDEXSettleTx>(this); }
+    virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CDEXSettleTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache); //logging usage
     virtual Object ToJson(const CAccountDBCache &accountCache) const; //json-rpc usage
-    virtual bool GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds);
 
-    virtual bool CheckTx(int height, CCacheWrapper &cw, CValidationState &state);
-    virtual bool ExecuteTx(int height, int index, CCacheWrapper &cw, CValidationState &state);
+    virtual bool CheckTx(CTxExecuteContext &context);
+    virtual bool ExecuteTx(CTxExecuteContext &context);
+
 private:
+    bool GetDealOrder(CCacheWrapper &cw, CValidationState &state, const uint256 &orderId,
+        const OrderSide orderSide, CDEXOrderDetail &dealOrder);
 
 private:
     vector<DEXDealItem> dealItems;

@@ -13,14 +13,14 @@
 #include "persistence/contractdb.h"
 #include "persistence/txdb.h"
 #include "entities/account.h"
-#include "json/json_spirit_value.h"
-#include "json/json_spirit_writer_template.h"
-#include "json/json_spirit_utils.h"
+#include "commons/json/json_spirit_value.h"
+#include "commons/json/json_spirit_writer_template.h"
+#include "commons/json/json_spirit_utils.h"
 #include "commons/serialize.h"
 #include "crypto/hash.h"
 #include "commons/util.h"
 #include "main.h"
-#include "vm/luavm/vmrunenv.h"
+#include "vm/luavm/luavmrunenv.h"
 #include "miner/miner.h"
 #include "config/version.h"
 
@@ -34,84 +34,105 @@ string GetTxType(const TxType txType) {
         return "";
 }
 
-uint64_t GetTxMinFee(const TxType nTxType, int height) {
+bool GetTxMinFee(const TxType nTxType, int height, const TokenSymbol &symbol, uint64_t &feeOut) {
     const auto &iter = kTxFeeTable.find(nTxType);
-    switch (GetFeatureForkVersion(height)) {
-        case MAJOR_VER_R1: // Prior-stablecoin Release
-            return iter != kTxFeeTable.end() ? std::get<1>(iter->second) : 0;
-
-        case MAJOR_VER_R2:  // StableCoin Release
-            return iter != kTxFeeTable.end() ? std::get<2>(iter->second) : 0;
-
-        default:
-            return 10000; //10^-8 WICC
+    if (iter != kTxFeeTable.end()) {
+        FeatureForkVersionEnum version = GetFeatureForkVersion(height);
+        if (symbol == SYMB::WICC) {
+            switch (version) {
+                case MAJOR_VER_R1: // Prior-stablecoin Release
+                    feeOut = std::get<1>(iter->second);
+                    return true;
+                case MAJOR_VER_R2:  // StableCoin Release
+                    feeOut = std::get<2>(iter->second);
+                    return true;
+            }
+        } else if (symbol == SYMB::WUSD) {
+            switch (version) {
+                case MAJOR_VER_R1: // Prior-stablecoin Release
+                    feeOut = std::get<3>(iter->second);
+                    return true;
+                case MAJOR_VER_R2:  // StableCoin Release
+                    feeOut = std::get<4>(iter->second);
+                    return true;
+            }
+        }
     }
+    return false;
+
 }
 
 bool CBaseTx::IsValidHeight(int32_t nCurrHeight, int32_t nTxCacheHeight) const {
-    if (BLOCK_REWARD_TX == nTxType || PRICE_MEDIAN_TX == nTxType)
+    if (BLOCK_REWARD_TX == nTxType || UCOIN_BLOCK_REWARD_TX == nTxType || PRICE_MEDIAN_TX == nTxType)
         return true;
 
-    if (nValidHeight > nCurrHeight + nTxCacheHeight / 2)
+    if (valid_height > nCurrHeight + nTxCacheHeight / 2)
         return false;
 
-    if (nValidHeight < nCurrHeight - nTxCacheHeight / 2)
+    if (valid_height < nCurrHeight - nTxCacheHeight / 2)
         return false;
 
     return true;
 }
 
-uint64_t CBaseTx::GetFuel(uint32_t nFuelRate) { return nRunStep == 0 ? 0 : ceil(nRunStep / 100.0f) * nFuelRate; }
+bool CBaseTx::GenerateRegID(CTxExecuteContext &context, CAccount &account) {
+    if (txUid.type() == typeid(CPubKey)) {
+        account.owner_pubkey = txUid.get<CPubKey>();
 
-uint32_t CBaseTx::GetFuelRate(CContractDBCache &scriptDB) {
-    if (nFuelRate > 0)
-        return nFuelRate;
-
-    CDiskTxPos txPos;
-    if (scriptDB.ReadTxIndex(GetHash(), txPos)) {
-        CAutoFile file(OpenBlockFile(txPos, true), SER_DISK, CLIENT_VERSION);
-        CBlockHeader header;
-        try {
-            file >> header;
-        } catch (std::exception &e) {
-            return ERRORMSG("%s : Deserialize or I/O error - %s", __func__, e.what());
+        CRegID regId;
+        if (context.pCw->accountCache.GetRegId(txUid, regId)) {
+            // account has regid already, return
+            return true;
         }
-        nFuelRate = header.GetFuelRate();
-    } else {
-        nFuelRate = GetElementForBurn(chainActive.Tip());
+
+        // generate a new regid for the account
+        account.regid = CRegID(context.height, context.index);
+        if (!context.pCw->accountCache.SaveAccount(account))
+            return context.pState->DoS(100, ERRORMSG("CBaseTx::GenerateRegID, save account info error"), WRITE_ACCOUNT_FAIL,
+                             "bad-write-accountdb");
     }
 
-    return nFuelRate;
+    return true;
 }
 
-bool CBaseTx::CheckTxFeeSufficient(const uint64_t llFees, const int32_t height) const {
-    const auto &iter = kTxFeeTable.find(nTxType);
+uint64_t CBaseTx::GetFuel(int32_t height, uint32_t fuelRate) {
+    return nRunStep == 0 || fuelRate == 0 ? 0 : ceil(nRunStep / 100.0f) * fuelRate;
+}
 
-    switch (GetFeatureForkVersion(height) ) {
+Object CBaseTx::ToJson(const CAccountDBCache &accountCache) const {
+    Object result;
+    CKeyID srcKeyId;
+    accountCache.GetKeyId(txUid, srcKeyId);
+    result.push_back(Pair("txid",           GetHash().GetHex()));
+    result.push_back(Pair("tx_type",        GetTxType(nTxType)));
+    result.push_back(Pair("ver",            nVersion));
+    result.push_back(Pair("tx_uid",         txUid.ToString()));
+    result.push_back(Pair("from_addr",      srcKeyId.ToAddress()));
+    result.push_back(Pair("fee_symbol",     fee_symbol));
+    result.push_back(Pair("fees",           llFees));
+    result.push_back(Pair("valid_height",   valid_height));
+    result.push_back(Pair("signature",      HexStr(signature)));
+    return result;
+}
 
-        case MAJOR_VER_R1: // Prior-stablecoin Release
-            return iter != kTxFeeTable.end() ? (llFees >= std::get<1>(iter->second)) : true;
-
-        case MAJOR_VER_R2:  // StableCoin Release
-            return iter != kTxFeeTable.end() ? (llFees >= std::get<2>(iter->second)) : true;
-
-        default:
-            return true;
+bool CBaseTx::CheckTxFeeSufficient(const TokenSymbol &feeSymbol, const uint64_t llFees, const int32_t height) const {
+    uint64_t minFee;
+    if (!GetTxMinFee(nTxType, height, feeSymbol, minFee)) {
+        assert(false && "Get tx min fee for WICC or WUSD");
+        return false;
     }
+    return llFees >= minFee;
 }
 
 // Transactions should check the signature size before verifying signature
 bool CBaseTx::CheckSignatureSize(const vector<unsigned char> &signature) const {
-    return signature.size() > 0 && signature.size() < MAX_BLOCK_SIGNATURE_SIZE;
+    return signature.size() > 0 && signature.size() < MAX_SIGNATURE_SIZE;
 }
 
-string CBaseTx::ToString(CAccountDBCache &view) {
-    string str = strprintf("txType=%s, hash=%s, ver=%d, pubkey=%s, llFees=%ld, keyid=%s, nValidHeight=%d\n",
-                            GetTxType(nTxType), GetHash().ToString(), nVersion,
-                            txUid.get<CPubKey>().ToString(),
-                            llFees, txUid.get<CPubKey>().GetKeyId().ToAddress(), nValidHeight);
-
-    return str;
+string CBaseTx::ToString(CAccountDBCache &accountCache) {
+    return strprintf("txType=%s, hash=%s, ver=%d, pubkey=%s, llFees=%llu, keyid=%s, valid_height=%d",
+                     GetTxType(nTxType), GetHash().ToString(), nVersion, txUid.get<CPubKey>().ToString(), llFees,
+                     txUid.get<CPubKey>().GetKeyId().ToAddress(), valid_height);
 }
 
 bool CBaseTx::GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds) {
@@ -129,7 +150,7 @@ bool CBaseTx::AddInvolvedKeyIds(vector<CUserID> uids, CCacheWrapper &cw, set<CKe
     return true;
 }
 
-bool CBaseTx::CheckCoinRange(TokenSymbol symbol, int64_t amount) {
+bool CBaseTx::CheckCoinRange(const TokenSymbol &symbol, const int64_t amount) const {
     if (symbol == SYMB::WICC) {
         return CheckBaseCoinRange(amount);
     } else if (symbol == SYMB::WGRT) {
@@ -140,23 +161,4 @@ bool CBaseTx::CheckCoinRange(TokenSymbol symbol, int64_t amount) {
         // TODO: need to check other token range
         return amount >= 0;
     }
-}
-
-bool CBaseTx::SaveTxAddresses(uint32_t height, uint32_t index, CCacheWrapper &cw,
-                              CValidationState &state, const vector<CUserID> &userIds) {
-    if (SysCfg().GetAddressToTxFlag()) {
-        for (auto userId : userIds) {
-            if (userId.type() != typeid(CNullID)) {
-                CKeyID keyId;
-                if (!cw.accountCache.GetKeyId(userId, keyId))
-                    return state.DoS(100, ERRORMSG("CBaseTx::SaveTxAddresses, get keyid by uid error"),
-                                    READ_ACCOUNT_FAIL, "bad-get-keyid-uid");
-
-                if (!cw.contractCache.SetTxHashByAddress(keyId, height, index + 1, GetHash()))
-                    return state.DoS(100, ERRORMSG("CBaseTx::SaveTxAddresses, SetTxHashByAddress to db cache failed!"),
-                                    READ_ACCOUNT_FAIL, "bad-set-txHashByAddress");
-            }
-        }
-    }
-    return true;
 }

@@ -24,18 +24,27 @@ class CBaseTx;
 class CAccountDBCache;
 class CAccount;
 
-typedef std::tuple<double /* priority */, double /* FeePerKb */, std::shared_ptr<CBaseTx> > TxPriority;
+#include <cmath>
 
-class TxPriorityCompare {
-    bool byFee;
+using namespace std;
 
-public:
-    TxPriorityCompare(bool byFeeIn) : byFee(byFeeIn) {}
-    bool operator()(const TxPriority &a, const TxPriority &b) {
-        if (byFee) {
-            return std::get<1>(a) == std::get<1>(b) ? std::get<0>(a) < std::get<0>(b) : std::get<1>(a) < std::get<1>(b);
+struct TxPriority {
+    double priority;
+    double feePerKb;
+    std::shared_ptr<CBaseTx> baseTx;
+
+    TxPriority(const double priorityIn, const double feePerKbIn, const std::shared_ptr<CBaseTx> &baseTxIn)
+        : priority(priorityIn), feePerKb(feePerKbIn), baseTx(baseTxIn) {}
+
+    bool operator<(const TxPriority &other) const {
+        if (fabs(this->priority - other.priority) <= 1000) {
+            if (fabs(this->feePerKb < other.feePerKb) <= 1e-8) {
+                return this->baseTx->GetHash() < other.baseTx->GetHash();
+            } else {
+                return this->feePerKb < other.feePerKb;
+            }
         } else {
-            return std::get<0>(a) == std::get<0>(b) ? std::get<1>(a) < std::get<1>(b) : std::get<0>(a) < std::get<0>(b);
+            return this->priority < other.priority;
         }
     }
 };
@@ -45,7 +54,7 @@ class MinedBlockInfo {
 public:
     int64_t time;             // block time
     int64_t nonce;            // nonce
-    int height;               // block height
+    int32_t height;               // block height
     uint64_t totalFuel;       // the total fuels of all transactions in the block
     uint fuelRate;            // block fuel rate
     uint64_t totalFees;       // the total fees of all transactions in the block
@@ -72,28 +81,17 @@ std::unique_ptr<CBlock> CreateStableCoinGenesisBlock();
 /** Generate a new block after stable coin release */
 std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn);
 
-/** Modify the extranonce in a block */
-void IncrementExtraNonce(CBlock *pBlock, CBlockIndex *pIndexPrev, unsigned int &nExtraNonce);
-/** Do mining precalculation */
-void FormatHashBuffers(CBlock *pBlock, char *pmidstate, char *pdata, char *phash1);
-
 bool CreateBlockRewardTx(const int64_t currentTime, const CAccount &delegate, CAccountDBCache &accountCache,
                          CBlock *pBlock);
 
-void ShuffleDelegates(const int nCurHeight, vector<CRegID> &delegatesList);
+bool VerifyRewardTx(const CBlock *pBlock, CCacheWrapper &cwIn, bool bNeedRunTx = false);
 
-bool GetCurrentDelegate(const int64_t currentTime, const vector<CAccount> &vDelegatesAcctList, CAccount &delegateAcct);
-
-bool VerifyPosTx(const CBlock *pBlock, CCacheWrapper &cwIn, bool bNeedRunTx = false);
 /** Check mined block */
 bool CheckWork(CBlock *pBlock, CWallet &wallet);
-/** Base sha256 mining transform */
-void SHA256Transform(void *pstate, void *pinput, const void *pinit);
+
 /** Get burn element */
 uint32_t GetElementForBurn(CBlockIndex *pIndex);
 
 void GetPriorityTx(vector<TxPriority> &vecPriority, int32_t nFuelRate);
-
-extern uint256 CreateBlockWithAppointedAddr(CKeyID const &keyId);
 
 #endif  // COIN_MINER_H

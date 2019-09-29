@@ -12,58 +12,28 @@
 class CBaseCoinTransferTx : public CBaseTx {
 public:
     mutable CUserID toUid;  // Recipient Regid or Keyid
-    uint64_t bcoins;        // transfer amount
-    UnsignedCharArray memo;
+    uint64_t coin_amount;   // coin amount (coin symbol: WICC)
+    string memo;
 
 public:
-    CBaseCoinTransferTx(): CBaseTx(BCOIN_TRANSFER_TX) { }
-
-    CBaseCoinTransferTx(const CBaseTx *pBaseTx): CBaseTx(BCOIN_TRANSFER_TX) {
-        assert(BCOIN_TRANSFER_TX == pBaseTx->nTxType);
-        *this = *(CBaseCoinTransferTx *)pBaseTx;
-    }
-
-    CBaseCoinTransferTx(const CUserID &txUidIn, CUserID toUidIn, uint64_t feesIn, uint64_t valueIn,
-              int validHeightIn, UnsignedCharArray &memoIn) :
-              CBaseTx(BCOIN_TRANSFER_TX, txUidIn, validHeightIn, feesIn) {
-        if (txUidIn.type() == typeid(CRegID))
-            assert(!txUidIn.get<CRegID>().IsEmpty());
-        else if (txUidIn.type() == typeid(CPubKey))
-            assert(txUidIn.get<CPubKey>().IsFullyValid());
-
-        if (toUidIn.type() == typeid(CRegID))
-            assert(!toUidIn.get<CRegID>().IsEmpty());
-
-        toUid   = toUidIn;
-        bcoins  = valueIn;
-        memo    = memoIn;
-    }
-
-    CBaseCoinTransferTx(const CUserID &txUidIn, CUserID toUidIn, uint64_t feesIn, uint64_t valueIn,
-              int validHeightIn): CBaseTx(BCOIN_TRANSFER_TX, txUidIn, validHeightIn, feesIn) {
-        if (txUidIn.type() == typeid(CRegID))
-            assert(!txUidIn.get<CRegID>().IsEmpty());
-        else if (txUidIn.type() == typeid(CPubKey))
-            assert(txUidIn.get<CPubKey>().IsFullyValid());
-
-        if (toUidIn.type() == typeid(CRegID))
-            assert(!toUidIn.get<CRegID>().IsEmpty());
-
-        toUid  = toUidIn;
-        bcoins = valueIn;
-    }
-
+    CBaseCoinTransferTx() : CBaseTx(BCOIN_TRANSFER_TX) {}
+    CBaseCoinTransferTx(const CUserID &txUidIn, const CUserID &toUidIn, const int32_t validHeightIn,
+                        const uint64_t coinAmount, const uint64_t feesIn, const string &memoIn)
+        : CBaseTx(BCOIN_TRANSFER_TX, txUidIn, validHeightIn, SYMB::WICC, feesIn),
+          toUid(toUidIn),
+          coin_amount(coinAmount),
+          memo(memoIn) {}
     ~CBaseCoinTransferTx() {}
 
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
         READWRITE(toUid);
         READWRITE(VARINT(llFees));
-        READWRITE(VARINT(bcoins));
+        READWRITE(VARINT(coin_amount));
         READWRITE(memo);
         READWRITE(signature);
     )
@@ -71,69 +41,75 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(nValidHeight) << txUid << toUid
-               << VARINT(llFees) << VARINT(bcoins) << memo;
+            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(valid_height) << txUid << toUid
+               << VARINT(llFees) << VARINT(coin_amount) << memo;
             sigHash = ss.GetHash();
         }
 
         return sigHash;
     }
 
-    virtual map<TokenSymbol, uint64_t> GetValues() const { return map<TokenSymbol, uint64_t>{{SYMB::WICC, bcoins}}; }
-    virtual std::shared_ptr<CBaseTx> GetNewInstance() { return std::make_shared<CBaseCoinTransferTx>(this); }
+    virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CBaseCoinTransferTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache);
     virtual Object ToJson(const CAccountDBCache &accountCache) const;
-    virtual bool GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds);
 
-    virtual bool CheckTx(int height, CCacheWrapper &cw, CValidationState &state);
-    virtual bool ExecuteTx(int height, int index, CCacheWrapper &cw, CValidationState &state);
+    virtual bool CheckTx(CTxExecuteContext &context);
+    virtual bool ExecuteTx(CTxExecuteContext &context);
 };
 
 /**################################ Universal Coin Transfer ########################################**/
+
+struct SingleTransfer {
+    CUserID to_uid;
+    TokenSymbol coin_symbol = SYMB::WICC;
+    uint64_t coin_amount = 0;
+
+    SingleTransfer() {}
+
+    SingleTransfer(const CUserID &toUidIn, const TokenSymbol &coinSymbol, const uint64_t coinAmount)
+        : to_uid(toUidIn), coin_symbol(coinSymbol), coin_amount(coinAmount) {}
+
+    IMPLEMENT_SERIALIZE(
+        READWRITE(to_uid);
+        READWRITE(coin_symbol);
+        READWRITE(VARINT(coin_amount));
+    )
+    string ToString(const CAccountDBCache &accountCache) const ;
+
+    Object ToJson(const CAccountDBCache &accountCache) const;
+};
+
+
 /**
  * Universal Coin Transfer Tx
  *
  */
 class CCoinTransferTx: public CBaseTx {
 public:
-    mutable CUserID toUid;
-    TokenSymbol coin_symbol;
-    uint64_t coin_amount;
-    TokenSymbol fee_symbol;
-    UnsignedCharArray memo;
+    vector<SingleTransfer> transfers;
+    string memo;
 
 public:
     CCoinTransferTx()
-        : CBaseTx(UCOIN_TRANSFER_TX), coin_symbol(SYMB::WICC), coin_amount(0), fee_symbol(SYMB::WICC) {}
+        : CBaseTx(UCOIN_TRANSFER_TX) {}
 
-    CCoinTransferTx(const CBaseTx *pBaseTx): CBaseTx(UCOIN_TRANSFER_TX) {
-        assert(UCOIN_TRANSFER_TX == pBaseTx->nTxType);
-        *this = *(CCoinTransferTx *) pBaseTx;
-    }
-
-    CCoinTransferTx(const CUserID &txUidIn, const CUserID &toUidIn, int32_t validHeightIn,
-                    const TokenSymbol &coinSymbol, uint64_t coinAmount, const TokenSymbol &feeSymbol, uint64_t feesIn,
-                    const UnsignedCharArray &memoIn)
-        : CBaseTx(UCOIN_TRANSFER_TX, txUidIn, validHeightIn, feesIn) {
-        toUid        = toUidIn;
-        coin_amount  = coinAmount;
-        coin_symbol  = coinSymbol;
-        fee_symbol   = feeSymbol;
-        memo         = memoIn;
-    }
+    CCoinTransferTx(const CUserID &txUidIn, const CUserID &toUidIn, const int32_t validHeightIn,
+                    const TokenSymbol &coinSymbol, const uint64_t coinAmount,
+                    const TokenSymbol &feeSymbol, const uint64_t feesIn, const string &memoIn)
+        : CBaseTx(UCOIN_TRANSFER_TX, txUidIn, validHeightIn, feeSymbol, feesIn),
+          transfers( { {toUidIn, coinSymbol, coinAmount} } ),
+          memo(memoIn) {}
 
     ~CCoinTransferTx() {}
 
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
-        READWRITE(toUid);
-        READWRITE(coin_symbol);
-        READWRITE(VARINT(coin_amount));
         READWRITE(fee_symbol);
         READWRITE(VARINT(llFees));
+        READWRITE(transfers);
         READWRITE(memo);
         READWRITE(signature);
     )
@@ -141,8 +117,8 @@ public:
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(nValidHeight) << txUid << toUid << coin_symbol
-               << VARINT(coin_amount) << fee_symbol << VARINT(llFees) << memo;
+            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(valid_height) << txUid
+               << fee_symbol << VARINT(llFees) << transfers << memo;
 
             sigHash = ss.GetHash();
         }
@@ -150,14 +126,12 @@ public:
         return sigHash;
     }
 
-    map<TokenSymbol, uint64_t> GetValues() const { return map<TokenSymbol, uint64_t>{{coin_symbol, coin_amount}}; }
-    virtual std::shared_ptr<CBaseTx> GetNewInstance() { return std::make_shared<CCoinTransferTx>(this); }
+    virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CCoinTransferTx>(*this); }
     virtual string ToString(CAccountDBCache &accountCache);
     virtual Object ToJson(const CAccountDBCache &accountCache) const;
-    bool GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds);
 
-    bool CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state);
-    bool ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state);
+    virtual bool CheckTx(CTxExecuteContext &context);
+    virtual bool ExecuteTx(CTxExecuteContext &context);
 };
 
 #endif // TX_COIN_TRANSFER_H

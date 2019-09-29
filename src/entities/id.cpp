@@ -9,21 +9,36 @@
 
 extern CCacheDBManager *pCdMan;
 
-bool CRegID::Clear() {
-    height = 0 ;
-    index = 0 ;
-    vRegID.clear();
-    return true;
-}
+CRegID::CRegID(const string &strRegID) { SetRegID(strRegID); }
 
-CRegID::CRegID(const vector<unsigned char>& vIn) {
+CRegID::CRegID(const vector<uint8_t> &vIn) {
     assert(vIn.size() == 6);
     vRegID = vIn;
     height = 0;
-    index = 0;
+    index  = 0;
     CDataStream ds(vIn, SER_DISK, CLIENT_VERSION);
     ds >> height;
     ds >> index;
+}
+
+CRegID::CRegID(const uint32_t heightIn, const uint16_t indexIn) {
+    height = heightIn;
+    index  = indexIn;
+    vRegID.clear();
+    vRegID.insert(vRegID.end(), BEGIN(heightIn), END(heightIn));
+    vRegID.insert(vRegID.end(), BEGIN(indexIn), END(indexIn));
+}
+
+bool IsDigitalString(const string str){
+
+    if (str.length() > 10 || str.length() == 0) //int max is 4294967295 can not over 10
+        return false;
+
+    for (auto te : str) {
+        if (!isdigit(te))
+            return false;
+    }
+    return true ;
 }
 
 bool CRegID::IsSimpleRegIdStr(const string & str) {
@@ -34,28 +49,15 @@ bool CRegID::IsSimpleRegIdStr(const string & str) {
         if (pos > len - 1) {
             return false;
         }
-        string firtstr = str.substr(0, pos);
+        string firstStr = str.substr(0, pos);
+        string endStr = str.substr(pos + 1);
 
-        if (firtstr.length() > 10 || firtstr.length() == 0) //int max is 4294967295 can not over 10
-            return false;
-
-        for (auto te : firtstr) {
-            if (!isdigit(te))
-                return false;
-        }
-        string endstr = str.substr(pos + 1);
-        if (endstr.length() > 10 || endstr.length() == 0) //int max is 4294967295 can not over 10
-            return false;
-        for (auto te : endstr) {
-            if (!isdigit(te))
-                return false;
-        }
-        return true;
+        return IsDigitalString(firstStr) && IsDigitalString(endStr) ;
     }
     return false;
 }
 
-bool CRegID::GetKeyId(const string & str,CKeyID &keyId) {
+bool CRegID::GetKeyId(const string &str, CKeyID &keyId) {
     CRegID regId(str);
     if (regId.IsEmpty())
         return false;
@@ -74,21 +76,24 @@ void CRegID::SetRegID(string strRegID) {
     vRegID.clear();
 
     if (IsSimpleRegIdStr(strRegID)) {
-        int pos = strRegID.find('-');
-        height = atoi(strRegID.substr(0, pos).c_str());
-        index  = atoi(strRegID.substr(pos + 1).c_str());
+        auto pos = strRegID.find('-');
+        height   = atoi(strRegID.substr(0, pos).c_str());
+        index    = atoi(strRegID.substr(pos + 1).c_str());
         vRegID.insert(vRegID.end(), BEGIN(height), END(height));
         vRegID.insert(vRegID.end(), BEGIN(index), END(index));
-        // memcpy(&vRegID.at(0), &height, sizeof(height));
-        // memcpy(&vRegID[sizeof(height)], &index, sizeof(index));
     } else if (strRegID.length() == 12) {
         vRegID = ::ParseHex(strRegID);
-        memcpy(&height, &vRegID[0], sizeof(height));
-        memcpy(&index, &vRegID[sizeof(height)], sizeof(index));
+
+        if (vRegID.size() > sizeof(height) + sizeof(index)) {
+            memcpy(&height, &vRegID[0], sizeof(height));
+            memcpy(&index, &vRegID[sizeof(height)], sizeof(index));
+        } else {
+            // failed to parse strRegID, do not bother to initialize height and index.
+        }
     }
 }
 
-void CRegID::SetRegID(const vector<unsigned char> &vIn) {
+void CRegID::SetRegID(const vector<uint8_t> &vIn) {
     assert(vIn.size() == 6);
     vRegID = vIn;
     CDataStream ds(vIn, SER_DISK, CLIENT_VERSION);
@@ -96,7 +101,7 @@ void CRegID::SetRegID(const vector<unsigned char> &vIn) {
     ds >> index;
 }
 
-const vector<unsigned char> &CRegID::GetRegIdRaw() const {
+const vector<uint8_t> &CRegID::GetRegIdRaw() const {
     assert(vRegID.size() == 6);
     return vRegID;
 }
@@ -105,14 +110,12 @@ string CRegID::ToRawString() const {
     return string(vRegID.begin(), vRegID.end());  // TODO: change the vRegID to string
 }
 
-CRegID::CRegID(string strRegID) { SetRegID(strRegID); }
-
-CRegID::CRegID(uint32_t nHeightIn, uint16_t nIndexIn) {
-    height = nHeightIn;
-    index  = nIndexIn;
+bool CRegID::Clear() {
+    height = 0;
+    index  = 0;
     vRegID.clear();
-    vRegID.insert(vRegID.end(), BEGIN(nHeightIn), END(nHeightIn));
-    vRegID.insert(vRegID.end(), BEGIN(nIndexIn), END(nIndexIn));
+
+    return true;
 }
 
 string CRegID::ToString() const {
@@ -122,13 +125,18 @@ string CRegID::ToString() const {
     return strprintf("%d-%d", height, index);
 }
 
-CKeyID CRegID::GetKeyId(const CAccountDBCache &view) const {
+CKeyID CRegID::GetKeyId(const CAccountDBCache &accountCache) const {
     CKeyID retKeyId;
-    CAccountDBCache(view).GetKeyId(*this, retKeyId);
+    accountCache.GetKeyId(*this, retKeyId);
+
     return retKeyId;
 }
 
-void CRegID::SetRegIDByCompact(const vector<unsigned char> &vIn) {
+bool CRegID::IsMature(uint32_t curHeight) const {
+    return ((height == 0) && (index != 0)) || ((height != 0) && curHeight > height + REG_ID_MATURITY);
+}
+
+void CRegID::SetRegIDByCompact(const vector<uint8_t> &vIn) {
     if (vIn.size() > 0) {
         CDataStream ds(vIn, SER_DISK, CLIENT_VERSION);
         ds >> *this;
@@ -139,6 +147,23 @@ void CRegID::SetRegIDByCompact(const vector<unsigned char> &vIn) {
 
 ///////////////////////////////////////////////////////////////////////////////
 // class CUserID
+
+const CUserID CUserID::NULL_ID = {};
+
+string CUserID::ToDebugString() const {
+        if (is<CRegID>()) {
+            return "R:" + get<CRegID>().ToString();
+        } else if (is<CKeyID>()) {
+            return "A:" + get<CKeyID>().ToAddress();
+        } else if (is<CPubKey>()) {
+            return "P:" + get<CPubKey>().ToString();
+        } else if (is<CNickID>()) {
+            return "N:" + get<CNickID>().ToString();
+        } else {
+            assert(is<CNullID>());
+            return "Null";
+        }
+}
 
 shared_ptr<CUserID> CUserID::ParseUserId(const string &idStr) {
     CRegID regId(idStr);

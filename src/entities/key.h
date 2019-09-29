@@ -48,8 +48,9 @@ private:
 
     // Compute the length of a pubkey with a given first byte.
     uint32_t static GetLen(uint8_t chHeader) {
-        if (chHeader == 2 || chHeader == 3) return 33;
-        //		assert(0); //only sorpurt 33
+        if (chHeader == 2 || chHeader == 3)
+            return 33;
+        //		assert(0); //only support 33
         //		if (chHeader == 4 || chHeader == 6 || chHeader == 7)
         //			return 65;
         return 0;
@@ -189,6 +190,8 @@ public:
         //		return size() > 0;
         return size() == 33;  // force use Compressed key
     }
+
+    bool IsEmpty() const { return size() == 0; }
 
     // fully validate whether this is a valid public key (more expensive than IsValid())
     bool IsFullyValid() const;

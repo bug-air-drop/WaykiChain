@@ -12,8 +12,6 @@
 #include "commons/util.h"
 #include "version.h"
 
-#include <boost/filesystem.hpp>
-#include <boost/filesystem/fstream.hpp>
 #include <map>
 #include <memory>
 #include <vector>
@@ -29,112 +27,80 @@ const G_CONFIG_TABLE& IniCfg();
 class G_CONFIG_TABLE {
 public:
     string GetCoinName() const { return COIN_NAME; }
-    const string GetAlertPkey(NET_TYPE type) const;
+    const string GetAlertPkey(const NET_TYPE type) const;
 
-    const vector<string> GetInitPubKey(NET_TYPE type) const;
-    const uint256 GetGenesisBlockHash(NET_TYPE type) const;
-    string GetDelegateSignature(NET_TYPE type) const;
-    const vector<string> GetDelegatePubKey(NET_TYPE type) const;
+    const vector<string> GetInitPubKey(const NET_TYPE type) const;
+    uint8_t GetGenesisBlockNonce(const NET_TYPE type) const;
+    uint256 GetGenesisBlockHash(const NET_TYPE type) const;
+    string GetDelegateSignature(const NET_TYPE type) const;
+    const vector<string> GetDelegatePubKey(const NET_TYPE type) const;
     const uint256 GetMerkleRootHash() const;
 
-    const string GetDexMatchServicePubKey(NET_TYPE type) const;
-    const string GetInitFcoinOwnerPubKey(NET_TYPE type) const;
+    const string GetDexMatchServicePubKey(const NET_TYPE type) const;
+    const string GetInitFcoinOwnerPubKey(const NET_TYPE type) const;
 
-    vector<unsigned int> GetSeedNodeIP() const;
-    unsigned char* GetMagicNumber(NET_TYPE type) const;
-    vector<unsigned char> GetAddressPrefix(NET_TYPE type, Base58Type BaseType) const;
-    unsigned int GetDefaultPort(NET_TYPE type) const;
-    unsigned int GetRPCPort(NET_TYPE type) const;
-    unsigned int GetStartTimeInit(NET_TYPE type) const;
-    unsigned int GetHalvingInterval(NET_TYPE type) const;
-    uint64_t GetBlockSubsidyCfg(int height) const;
-    int GetBlockSubsidyJumpHeight(uint64_t nSubsidyValue) const;
+    vector<uint32_t> GetSeedNodeIP() const;
+    uint8_t* GetMagicNumber(const NET_TYPE type) const;
+    vector<uint8_t> GetAddressPrefix(const NET_TYPE type, const Base58Type BaseType) const;
+    uint32_t GetDefaultPort(const NET_TYPE type) const;
+    uint32_t GetRPCPort(const NET_TYPE type) const;
+    uint32_t GetStartTimeInit(const NET_TYPE type) const;
     uint32_t GetTotalDelegateNum() const;
     uint32_t GetMaxVoteCandidateNum() const;
     uint64_t GetCoinInitValue() const { return InitialCoin; };
-	uint32_t GetFeatureForkHeight(NET_TYPE) const;
-    uint32_t GetStableCoinGenesisHeight(NET_TYPE) const;
-    const vector<string> GetStableCoinGenesisTxid(NET_TYPE type) const;
+	uint32_t GetFeatureForkHeight(const NET_TYPE type) const;
+    uint32_t GetStableCoinGenesisHeight(const NET_TYPE type) const;
+    const vector<string> GetStableCoinGenesisTxid(const NET_TYPE type) const;
 
 private:
     static string COIN_NAME; /* basecoin name */
 
     /* initial public key */
-    static vector<string> initPubKey_mainNet;
-    static vector<string> initPubKey_testNet;
-    static vector<string> initPubkey_regTest;
+    static vector<string> initPubKey[3];
 
     /* delegate public key */
-    static vector<string> delegatePubKey_mainNet;
-    static vector<string> delegatePubKey_testNet;
-    static vector<string> delegatePubKey_regTest;
+    static vector<string> delegatePubKey[3];
 
     /* delegate signature */
-    static string delegateSignature_mainNet;
-    static string delegateSignature_testNet;
-    static string delegateSignature_regNet;
+    static string delegateSignature[3];
 
     /* gensis block hash */
-    static string genesisBlockHash_mainNet;
-    static string genesisBlockHash_testNet;
-    static string genesisBlockHash_regNet;
+    static string genesisBlockHash[3];
 
     /* alert public key */
-    static string AlertPK_MainNet;
-    static string AlertPK_TestNet;
+    static string AlertPubKey[2];
 
     /* merkle root hash */
     static string MerkleRootHash;
 
     /* fund coin initial owner public key */
-    static string initFcoinOwnerPubKey_mainNet;
-    static string initFcoinOwnerPubKey_testNet;
-    static string initFcoinOwnerPubkey_regNet;
+    static string initFcoinOwnerPubKey[3];
 
     /* DEX order-matching service's public key */
-    static string dexMatchPubKey_mainNet;
-    static string dexMatchPubKey_testNet;
-    static string dexMatchPubKey_regTest;
+    static string dexMatchPubKey[3];
 
     /* txids in stable coin genesis */
-    static vector<string> stableCoinGenesisTxid_mainNet;
-    static vector<string> stableCoinGenesisTxid_testNet;
-    static vector<string> stableCoinGenesisTxid_regNet;
-
+    static vector<string> stableCoinGenesisTxid[3];
     /* Peer IP seeds */
-    static vector<unsigned int> pnSeed;
+    static vector<uint32_t> pnSeed;
+
+    /* Genesis Block Nonce */
+    static uint8_t GenesisBlockNonce[3];
 
     /* Network Magic Number */
-    static unsigned char Message_mainNet[MESSAGE_START_SIZE];
-    static unsigned char Message_testNet[MESSAGE_START_SIZE];
-    static unsigned char Message_regTest[MESSAGE_START_SIZE];
+    static uint8_t MessageMagicNumber[3][MESSAGE_START_SIZE];
 
     /* Address Prefix */
-    static vector<unsigned char> AddrPrefix_mainNet[MAX_BASE58_TYPES];
-    static vector<unsigned char> AddrPrefix_testNet[MAX_BASE58_TYPES];
+    static vector<uint8_t> AddrPrefix[2][MAX_BASE58_TYPES];
 
     /* P2P Port */
-    static unsigned int nDefaultPort_mainNet;
-    static unsigned int nDefaultPort_testNet;
-    static unsigned int nDefaultPort_regTest;
+    static uint32_t nP2PPort[3];
 
     /* RPC Port */
-    static unsigned int nRPCPort_mainNet;
-    static unsigned int nRPCPort_testNet;
-
-    /* UI Port */
-    static unsigned int nUIPort_mainNet;
-    static unsigned int nUIPort_testNet;
+    static uint32_t nRPCPort[2];
 
     /* Start Time */
-    static unsigned int StartTime_mainNet;
-    static unsigned int StartTime_testNet;
-    static unsigned int StartTime_regTest;
-
-    /* Subsidy Halving Interval*/
-    static unsigned int nSubsidyHalvingInterval_mainNet;
-    static unsigned int nSubsidyHalvingInterval_testNet;
-    static unsigned int nSubsidyHalvingInterval_regNet;
+    static uint32_t StartTime[3];
 
     /* Initial Coin */
     static uint64_t InitialCoin;
@@ -148,37 +114,103 @@ private:
     /* Max Number of Delegate Candidate to Vote for by a single account */
     static uint32_t MaxVoteCandidateNum;
 
-    /* Initial subsidy rate upon vote casting */
-    static uint64_t nInitialSubsidy;
-    /* Eventual/lasting subsidy rate for vote casting */
-    static uint64_t nFixedSubsidy;
-
     /* Block height to enable feature fork version */
-	static uint32_t nFeatureForkHeight_mainNet;
-    static uint32_t nFeatureForkHeight_testNet;
-    static uint32_t nFeatureForkHeight_regNet;
+	static uint32_t nFeatureForkHeight[3];
 
     /* Block height for stable coin genesis */
-    static uint32_t nStableScoinGenesisHeight_mainNet;
-    static uint32_t nStableScoinGenesisHeight_testNet;
-    static uint32_t nStableScoinGenesisHeight_regNet;
+    static uint32_t nStableScoinGenesisHeight[3];
 };
 
-inline FeatureForkVersionEnum GetFeatureForkVersion(int32_t blockHeight) {
-	if (blockHeight >= (int32_t)SysCfg().GetFeatureForkHeight())
-		return MAJOR_VER_R2;
-	else
-		return MAJOR_VER_R1;
+inline FeatureForkVersionEnum GetFeatureForkVersion(const int32_t currBlockHeight) {
+    if (currBlockHeight >= (int32_t)SysCfg().GetFeatureForkHeight())
+        return MAJOR_VER_R2;
+    else
+        return MAJOR_VER_R1;
 }
 
-static const int g_BlockVersion = 1;
+inline uint32_t GetBlockInterval(const int32_t currBlockHeight) {
+    FeatureForkVersionEnum featureForkVersion = GetFeatureForkVersion(currBlockHeight);
+    switch (featureForkVersion) {
+        case MAJOR_VER_R1:
+            return SysCfg().GetBlockIntervalPreStableCoinRelease();
+        case MAJOR_VER_R2:
+            return SysCfg().GetBlockIntervalStableCoinRelease();
+        default:
+            assert(false && "unknown feature fork version");
+    }
+
+    return 0;
+}
+
+inline uint32_t GetYearBlockCount(const int32_t currBlockHeight) {
+    return 365 /* days/year */ * 24 /* hours/day */ * 60 * 60 / GetBlockInterval(currBlockHeight);
+}
+
+inline uint32_t GetDayBlockCount(const int32_t currBlockHeight) {
+    return 24 /* hours/day */ * 60 * 60 / GetBlockInterval(currBlockHeight);
+}
+
+inline uint32_t GetJumpHeightBySubsidy(const uint8_t targetSubsidyRate) {
+    assert(targetSubsidyRate >= FIXED_SUBSIDY_RATE && targetSubsidyRate <= INITIAL_SUBSIDY_RATE);
+
+    static map<uint8_t, uint32_t> subsidyRate2BlockHeight;
+    static bool initialized = false;
+
+    if (!initialized) {
+        uint32_t jumpHeight        = 0;
+        uint32_t featureForkHeight = SysCfg().GetFeatureForkHeight();
+        uint32_t yearHeightV1      = SysCfg().NetworkID() == REGTEST_NET ? 500 : 3153600;    // pre-stable coin release
+        uint32_t yearHeightV2      = SysCfg().NetworkID() == REGTEST_NET ? 1500 : 10512000;  // stable coin release
+        uint32_t actualJumpHeight  = yearHeightV1;
+        bool switched              = false;
+
+        for (uint8_t subsidyRate = 5; subsidyRate >= 1; --subsidyRate) {
+            subsidyRate2BlockHeight[subsidyRate] = jumpHeight;
+
+            if (!switched) {
+                if (jumpHeight + actualJumpHeight > featureForkHeight) {
+                    jumpHeight = featureForkHeight + (1.0 - (1.0 * featureForkHeight - jumpHeight) / yearHeightV1) * yearHeightV2;
+                    actualJumpHeight = yearHeightV2;
+                    switched         = true;
+                } else if (jumpHeight + actualJumpHeight == featureForkHeight) {
+                    jumpHeight       = jumpHeight + actualJumpHeight;
+                    actualJumpHeight = yearHeightV2;
+                    switched         = true;
+                } else {
+                    jumpHeight = jumpHeight + actualJumpHeight;
+                }
+            } else {
+                jumpHeight = jumpHeight + actualJumpHeight;
+            }
+        }
+
+        initialized = true;
+        assert(subsidyRate2BlockHeight.size() == 5);
+    }
+
+    // for (const auto& item : subsidyRate2BlockHeight) {
+    //     LogPrint("DEUBG", "subsidyRate -> blockHeight: %d -> %u\n", item.first, item.second);
+    // }
+
+    return subsidyRate2BlockHeight.at(targetSubsidyRate);
+}
+
+inline uint8_t GetSubsidyRate(const int32_t currBlockHeight) {
+    for (uint8_t subsidyRate = FIXED_SUBSIDY_RATE; subsidyRate <= INITIAL_SUBSIDY_RATE; ++subsidyRate) {
+        if ((uint32_t)currBlockHeight >= GetJumpHeightBySubsidy(subsidyRate))
+            return subsidyRate;
+    }
+
+    assert(false && "failed to acquire subsidy rate");
+    return 0;
+}
+
+static const int32_t INIT_BLOCK_VERSION = 1;
 
 /* No amount larger than this (in sawi) is valid */
-static const int64_t BASECOIN_MAX_MONEY = IniCfg().GetCoinInitValue() * COIN;	// 210 million
-static const int64_t FUNDCOIN_MAX_MONEY = BASECOIN_MAX_MONEY / 10;				// 21 million
-static const int64_t STABLECOIN_MAX_MONEY = BASECOIN_MAX_MONEY * 10;			// 2100 million
-static const int64_t INIT_FUEL_RATES    = 100;  	// 100 unit / 100 step
-static const int64_t MIN_FUEL_RATES     = 1;    	// 1 unit / 100 step
+static const int64_t BASECOIN_MAX_MONEY   = IniCfg().GetCoinInitValue() * COIN;  // 210 million
+static const int64_t FUNDCOIN_MAX_MONEY   = BASECOIN_MAX_MONEY * 100;            // 21000 million
+static const int64_t STABLECOIN_MAX_MONEY = BASECOIN_MAX_MONEY * 10;             // 2100 million
 
 inline int64_t GetBaseCoinMaxMoney() { return BASECOIN_MAX_MONEY; }
 inline bool CheckBaseCoinRange(int64_t nValue) { return (nValue >= 0 && nValue <= BASECOIN_MAX_MONEY); }

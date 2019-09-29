@@ -60,6 +60,7 @@ bool CAccountDBCache::SetAccount(const CKeyID &keyId, const CAccount &account) {
     accountCache.SetData(keyId, account);
     return true;
 }
+
 bool CAccountDBCache::SetAccount(const CRegID &regId, const CAccount &account) {
     CKeyID keyId;
     if (regId2KeyIdCache.GetData(regId.ToRawString(), keyId)) {
@@ -94,15 +95,12 @@ bool CAccountDBCache::GetKeyId(const CRegID &regId, CKeyID &keyId) const {
 bool CAccountDBCache::GetKeyId(const CUserID &userId, CKeyID &keyId) const {
     if (userId.type() == typeid(CRegID)) {
         return GetKeyId(userId.get<CRegID>(), keyId);
-
     } else if (userId.type() == typeid(CPubKey)) {
         keyId = userId.get<CPubKey>().GetKeyId();
         return true;
-
     } else if (userId.type() == typeid(CKeyID)) {
         keyId = userId.get<CKeyID>();
         return true;
-
     } else if (userId.type() == typeid(CNullID)) {
         return ERRORMSG("GetKeyId: userId can't be of CNullID type");
     }
@@ -118,13 +116,7 @@ bool CAccountDBCache::SaveAccount(const CAccount &account) {
     regId2KeyIdCache.SetData(account.regid.ToRawString(), account.keyid);
     accountCache.SetData(account.keyid, account);
     nickId2KeyIdCache.SetData(account.nickid, account.keyid);
-/*
-    mapRegId2KeyId[ account.regid ] = account.keyid;
-    mapKeyId2Account[ account.keyid ] = account;
-    if (!account.nickid.IsEmpty()) {
-        mapNickId2KeyId[ account.nickid ] = account.keyid;
-    }
-*/
+
     return true;
 }
 
@@ -157,26 +149,25 @@ bool CAccountDBCache::GetRegId(const CKeyID &keyId, CRegID &regId) const {
 bool CAccountDBCache::GetRegId(const CUserID &userId, CRegID &regId) const {
     if (userId.type() == typeid(CRegID)) {
         regId = userId.get<CRegID>();
+
         return true;
     } else if (userId.type() == typeid(CKeyID)) {
         CAccount account;
         if (GetAccount(userId.get<CKeyID>(), account)) {
             regId = account.regid;
+
+            return !regId.IsEmpty();
+        }
+    } else if (userId.type() == typeid(CPubKey)) {
+        CAccount account;
+        if (GetAccount(userId.get<CPubKey>().GetKeyId(), account)) {
+            regId = account.regid;
+
             return !regId.IsEmpty();
         }
     }
+
     return false;
-}
-
-bool CAccountDBCache::RegIDIsMature(const CRegID &regId) const {
-    if (regId.IsEmpty())
-        return false;
-
-    int height = chainActive.Height();
-    if ((regId.GetHeight() == 0) || (height - regId.GetHeight() > kRegIdMaturePeriodByBlock))
-        return true;
-    else
-        return false;
 }
 
 bool CAccountDBCache::SetAccount(const CUserID &userId, const CAccount &account) {
@@ -227,7 +218,6 @@ uint64_t CAccountDBCache::GetAccountFreeAmount(const CKeyID &keyId, const TokenS
 }
 
 bool CAccountDBCache::Flush() {
-    blockHashCache.Flush();
     accountCache.Flush();
     regId2KeyIdCache.Flush();
     nickId2KeyIdCache.Flush();
@@ -236,8 +226,7 @@ bool CAccountDBCache::Flush() {
 }
 
 uint32_t CAccountDBCache::GetCacheSize() const {
-    return blockHashCache.GetCacheSize() +
-        accountCache.GetCacheSize() +
+    return accountCache.GetCacheSize() +
         regId2KeyIdCache.GetCacheSize() +
         nickId2KeyIdCache.GetCacheSize();
 }
@@ -246,16 +235,6 @@ std::tuple<uint64_t, uint64_t> CAccountDBCache::TraverseAccount() {
     // TODO: GetTotalCoins
     //return pBase->TraverseAccount();
     return make_tuple<uint64_t, uint64_t>(0, 0);
-}
-
-uint256 CAccountDBCache::GetBestBlock() const {
-    uint256 blockHash;
-    blockHashCache.GetData(blockHash);
-    return blockHash;
-}
-
-bool CAccountDBCache::SetBestBlock(const uint256 &blockHashIn) {
-    return blockHashCache.SetData(blockHashIn);
 }
 
 Object CAccountDBCache::ToJsonObj(dbk::PrefixType prefix) {

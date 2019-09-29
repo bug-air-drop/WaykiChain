@@ -14,13 +14,9 @@ public:
     mutable CUserID minerUid;  // miner pubkey
 
 public:
-    CAccountRegisterTx(const CBaseTx *pBaseTx): CBaseTx(ACCOUNT_REGISTER_TX) {
-        assert(ACCOUNT_REGISTER_TX == pBaseTx->nTxType);
-        *this = *(CAccountRegisterTx *)pBaseTx;
-    }
-    CAccountRegisterTx(const CUserID &txUidIn, const CUserID &minerUidIn, int64_t feesIn, int validHeightIn) :
+    CAccountRegisterTx(const CUserID &txUidIn, const CUserID &minerUidIn, int64_t feesIn, int32_t validHeightIn) :
         CBaseTx(ACCOUNT_REGISTER_TX, txUidIn, validHeightIn, feesIn) {
-        minerUid    = minerUidIn;
+        minerUid = minerUidIn;
     }
     CAccountRegisterTx(): CBaseTx(ACCOUNT_REGISTER_TX) {}
 
@@ -29,22 +25,17 @@ public:
     IMPLEMENT_SERIALIZE(
         READWRITE(VARINT(this->nVersion));
         nVersion = this->nVersion;
-        READWRITE(VARINT(nValidHeight));
+        READWRITE(VARINT(valid_height));
         READWRITE(txUid);
 
         READWRITE(minerUid);
         READWRITE(VARINT(llFees));
         READWRITE(signature);)
 
-    map<TokenSymbol, uint64_t> GetValues() const { return map<TokenSymbol, uint64_t>{{SYMB::WICC, 0}}; }
-
     TxID ComputeSignatureHash(bool recalculate = false) const {
         if (recalculate || sigHash.IsNull()) {
-            assert(txUid.type() == typeid(CPubKey) &&
-                   (minerUid.type() == typeid(CPubKey) || minerUid.type() == typeid(CNullID)));
-
             CHashWriter ss(SER_GETHASH, 0);
-            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(nValidHeight) << txUid << minerUid << VARINT(llFees);
+            ss << VARINT(nVersion) << uint8_t(nTxType) << VARINT(valid_height) << txUid << minerUid << VARINT(llFees);
 
             sigHash = ss.GetHash();
         }
@@ -52,13 +43,12 @@ public:
         return sigHash;
     }
 
-    virtual std::shared_ptr<CBaseTx> GetNewInstance() { return std::make_shared<CAccountRegisterTx>(this); }
-    virtual string ToString(CAccountDBCache &view);
-    virtual Object ToJson(const CAccountDBCache &AccountView) const;
-    virtual bool GetInvolvedKeyIds(CCacheWrapper& cw, set<CKeyID> &keyIds);
+    virtual std::shared_ptr<CBaseTx> GetNewInstance() const { return std::make_shared<CAccountRegisterTx>(*this); }
+    virtual string ToString(CAccountDBCache &accountCache);
+    virtual Object ToJson(const CAccountDBCache &accountCache) const;
 
-    virtual bool CheckTx(int height, CCacheWrapper& cw, CValidationState &state);
-    virtual bool ExecuteTx(int height, int index, CCacheWrapper& cw, CValidationState &state);
+    virtual bool CheckTx(CTxExecuteContext &context);
+    virtual bool ExecuteTx(CTxExecuteContext &context);
 };
 
 #endif

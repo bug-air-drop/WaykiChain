@@ -37,31 +37,41 @@ public:
 
 class CPricePointMemCache {
 public:
-    CPricePointMemCache() : pBase(nullptr) {}
-    CPricePointMemCache(CPricePointMemCache *pBaseIn) : pBase(pBaseIn) {}
+    map<CoinPricePair, uint64_t> latestBlockMedianPricePoints;
 
 public:
+    CPricePointMemCache() : pBase(nullptr) {}
+    CPricePointMemCache(CPricePointMemCache *pBaseIn)
+        : latestBlockMedianPricePoints(pBase->latestBlockMedianPricePoints), pBase(pBaseIn) {}
+
+public:
+    void SetLatestBlockMedianPricePoints(const map<CoinPricePair, uint64_t> &latestBlockMedianPricePoints);
     bool AddBlockPricePointInBatch(const int32_t blockHeight, const CRegID &regId, const vector<CPricePoint> &pps);
     bool AddBlockToCache(const CBlock &block);
     // delete block price point by specific block height.
     bool DeleteBlockPricePoint(const int32_t blockHeight);
     bool DeleteBlockFromCache(const CBlock &block);
 
-    uint64_t GetBcoinMedianPrice(const int32_t blockHeight);
-    uint64_t GetFcoinMedianPrice(const int32_t blockHeight);
-    bool GetBlockMedianPricePoints(const int32_t blockHeight, map<CoinPricePair, uint64_t> &mapMedianPricePointsIn);
+    uint64_t GetMedianPrice(const int32_t blockHeight, const uint64_t slideWindow, const CoinPricePair &coinPricePair);
+    bool GetBlockMedianPricePoints(const int32_t blockHeight, const uint64_t slideWindow,
+                                   map<CoinPricePair, uint64_t> &mapMedianPricePoints);
 
-    void SetBaseViewPtr(CPricePointMemCache *pBaseIn) { pBase = pBaseIn; }
+    void SetBaseViewPtr(CPricePointMemCache *pBaseIn);
     void Flush();
+    void Reset();
 
 private:
+    bool ExistBlockUserPrice(const int32_t blockHeight, const CRegID &regId, const CoinPricePair &coinPricePair);
+
     void BatchWrite(const CoinPricePointMap &mapCoinPricePointCacheIn);
 
     bool GetBlockUserPrices(const CoinPricePair &coinPricePair, set<int32_t> &expired, BlockUserPriceMap &blockUserPrices);
     bool GetBlockUserPrices(const CoinPricePair &coinPricePair, BlockUserPriceMap &blockUserPrices);
 
-    uint64_t ComputeBlockMedianPrice(const int32_t blockHeight, const CoinPricePair &coinPricePair);
-    uint64_t ComputeBlockMedianPrice(const int32_t blockHeight, const BlockUserPriceMap &blockUserPrices);
+    uint64_t ComputeBlockMedianPrice(const int32_t blockHeight, const uint64_t slideWindow,
+                                     const CoinPricePair &coinPricePair);
+    uint64_t ComputeBlockMedianPrice(const int32_t blockHeight, const uint64_t slideWindow,
+                                     const BlockUserPriceMap &blockUserPrices);
     static uint64_t ComputeMedianNumber(vector<uint64_t> &numbers);
 
 private:

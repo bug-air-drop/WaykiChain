@@ -78,25 +78,40 @@ map<TokenSymbol, uint64_t> CBlock::GetFees() const {
     return fees;
 }
 
-uint64_t CBlock::GetBlockMedianPrice(const CoinPricePair& coinPricePair) const {
-    if (vptx.size() == 1 || vptx[1]->nTxType != PRICE_MEDIAN_TX) {
-        return 0;
+map<CoinPricePair, uint64_t> CBlock::GetBlockMedianPrice() const {
+    if (GetFeatureForkVersion(GetHeight()) == MAJOR_VER_R1) {
+        return map<CoinPricePair, uint64_t>();
     }
 
-    auto mapMedianPricePoints = ((CBlockPriceMedianTx*)vptx[1].get())->GetMedianPrice();
+    for (size_t index = 1; index < vptx.size(); ++ index) {
+        if (vptx[index]->IsPriceFeedTx()) {
+            continue;
+        } else if (vptx[index]->IsPriceMedianTx()) {
+            return ((CBlockPriceMedianTx*)vptx[index].get())->GetMedianPrice();
+        } else {
+            break;
+        }
+    }
 
-    return mapMedianPricePoints.count(coinPricePair) ? mapMedianPricePoints[coinPricePair] : 0;
+    LogPrint("ERROR", "GetBlockMedianPrice() : failed to acquire median price, height: %u, hash: %s\n", GetHeight(),
+             GetHash().GetHex());
+    assert(false && "block does not have price median tx");
+    return map<CoinPricePair, uint64_t>();
 }
 
-void CBlock::Print(CAccountDBCache& accountCache) const {
+void CBlock::Print(CBlockDBCache& blockCache) const {
+    string medianPrices;
+    for (const auto &item : GetBlockMedianPrice()) {
+        medianPrices += strprintf("{%s/%s -> %llu}", std::get<0>(item.first), std::get<1>(item.first), item.second);
+    }
+
     LogPrint("INFO", "block hash=%s, ver=%d, hashPrevBlock=%s, merkleRootHash=%s, nTime=%u, nNonce=%u, vtx=%u, nFuel=%d, "
-             "nFuelRate=%d, bcoinMedianPrice=%lu, fcoinMedianPrice=%lu\n",
+             "nFuelRate=%d, median prices: %s\n",
              GetHash().ToString(), nVersion, prevBlockHash.ToString(), merkleRootHash.ToString(), nTime, nNonce,
-             vptx.size(), nFuel, nFuelRate, GetBlockMedianPrice(std::make_pair(SYMB::WICC, SYMB::USD)),
-             GetBlockMedianPrice(std::make_pair(SYMB::WGRT, SYMB::USD)));
+             vptx.size(), nFuel, nFuelRate, medianPrices);
     // LogPrint("INFO", "list transactions:\n");
     // for (uint32_t i = 0; i < vptx.size(); i++) {
-    //     LogPrint("INFO", "%s ", vptx[i]->ToString(accountCache));
+    //     LogPrint("INFO", "%s ", vptx[i]->ToString(blockCache));
     // }
     // LogPrint("INFO", "  vMerkleTree: ");
     // for (uint32_t i = 0; i < vMerkleTree.size(); i++) {

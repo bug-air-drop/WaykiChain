@@ -21,14 +21,26 @@ inline signed char HexDigit(char c) { return p_util_hexdigit[(unsigned char)c]; 
 /** Template base class for fixed-sized opaque blobs. */
 template <unsigned int BITS>
 class base_blob {
-protected:
+public:
     enum { WIDTH = BITS / 8 };
+protected:
     uint8_t data[WIDTH];
 
 public:
     base_blob() { memset(data, 0, sizeof(data)); }
 
     explicit base_blob(const std::vector<unsigned char>& vch);
+
+    template<typename T>
+    explicit base_blob(const T begin, const T end) {
+        if (end - begin == sizeof(data)) {
+            uint8_t* p = data; T it = begin;
+            for (; it != end; it++, p++)
+                *p = *it;
+        } else {
+            assert(false);
+        }
+    };
 
     bool IsNull() const {
         for (int i = 0; i < WIDTH; i++)
@@ -103,6 +115,9 @@ public:
     uint256(const base_blob<256>& b) : base_blob<256>(b) {}
     explicit uint256(const std::vector<unsigned char>& vch) : base_blob<256>(vch) {}
 
+    template<typename T>
+    explicit uint256(const T begin, const T end) : base_blob<256>(begin, end) {}
+
     /** A cheap hash function that just returns 64 bits from the result, it can be
      * used when the contents are considered uniformly random. It is not appropriate
      * when the value can easily be influenced from outside as e.g. a network adversary could
@@ -146,11 +161,7 @@ inline uint256 uint256S(const char* str) {
  * This is a separate function because the constructor uint256(const std::string &str) can result
  * in dangerously catching uint256(0) via std::string(const char*).
  */
-inline uint256 uint256S(const std::string& str) {
-    uint256 rv;
-    rv.SetHex(str);
-    return rv;
-}
+inline uint256 uint256S(const std::string& str) { return uint256S(str.c_str()); }
 
 class CUint256Hasher {
 public:

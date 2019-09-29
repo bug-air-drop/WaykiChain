@@ -43,7 +43,7 @@ BOOST_FIXTURE_TEST_CASE(transfer_test, CSysAccountTest)
 	CRegID regId;
 	BOOST_CHECK(RegisterAccount(strRegAddr,10000,strTxHash));
 	BOOST_CHECK(GenerateOneBlock());
-	BOOST_CHECK(GetRegID(strRegAddr,regId));
+	BOOST_CHECK(GegRegId(strRegAddr,regId));
 	BOOST_CHECK(false == regId.IsEmpty());
 
 	//使用一个注册过的keyID地址测试，看是否能够注册成功
@@ -88,7 +88,7 @@ BOOST_FIXTURE_TEST_CASE(register_test,CSysAccountTest)
 	vFailedTxHash.push_back(strTxHash);
 
 //	//不签名
-//	BOOST_CHECK(!RegisterAccount(strRegAddr1, nFee, strTxHash,nInValidHeight,false));
+//	BOOST_CHECK(!RegisterAccount(strRegAddr1, nFee, strTxHash,nIvalid_height,false));
 //	vFailedTxHash.push_back(strTxHash);
 
 	//手续费超过最大值

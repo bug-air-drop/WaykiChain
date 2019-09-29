@@ -24,7 +24,6 @@ public:
     CAccountDBCache() {}
 
     CAccountDBCache(CDBAccess *pDbAccess):
-        blockHashCache(pDbAccess),
         regId2KeyIdCache(pDbAccess),
         nickId2KeyIdCache(pDbAccess),
         accountCache(pDbAccess) {
@@ -32,7 +31,6 @@ public:
     }
 
     CAccountDBCache(CAccountDBCache *pBase):
-        blockHashCache(pBase->blockHashCache),
         regId2KeyIdCache(pBase->regId2KeyIdCache),
         nickId2KeyIdCache(pBase->nickId2KeyIdCache),
         accountCache(pBase->accountCache) {}
@@ -57,9 +55,6 @@ public:
     bool EraseAccount(const CKeyID &keyId);
     bool EraseAccount(const CUserID &userId);
 
-    uint256 GetBestBlock() const;
-    bool SetBestBlock(const uint256 &blockHash);
-
     bool BatchWrite(const map<CKeyID, CAccount> &mapAccounts,
                     const map<CRegID, CKeyID> &mapKeyIds,
                     const uint256 &blockHash);
@@ -79,13 +74,11 @@ public:
     bool GetUserId(const string &addr, CUserID &userId) const;
     bool GetRegId(const CKeyID &keyId, CRegID &regId) const;
     bool GetRegId(const CUserID &userId, CRegID &regId) const;
-    bool RegIDIsMature(const CRegID &regId) const;
 
     uint32_t GetCacheSize() const;
     Object ToJsonObj(dbk::PrefixType prefix = dbk::EMPTY);
 
     void SetBaseViewPtr(CAccountDBCache *pBaseIn) {
-        blockHashCache.SetBase(&pBaseIn->blockHashCache);
         accountCache.SetBase(&pBaseIn->accountCache);
         regId2KeyIdCache.SetBase(&pBaseIn->regId2KeyIdCache);
         nickId2KeyIdCache.SetBase(&pBaseIn->nickId2KeyIdCache);
@@ -96,27 +89,17 @@ public:
     bool Flush();
 
     void SetDbOpLogMap(CDBOpLogMap *pDbOpLogMapIn) {
-        blockHashCache.SetDbOpLogMap(pDbOpLogMapIn);
         accountCache.SetDbOpLogMap(pDbOpLogMapIn);
         regId2KeyIdCache.SetDbOpLogMap(pDbOpLogMapIn);
         nickId2KeyIdCache.SetDbOpLogMap(pDbOpLogMapIn);
     }
 
-    bool UndoDatas() {
-        return blockHashCache.UndoDatas() &&
-               accountCache.UndoDatas() &&
-               regId2KeyIdCache.UndoDatas() &&
-               nickId2KeyIdCache.UndoDatas();
+    bool UndoData() {
+        return accountCache.UndoData() &&
+               regId2KeyIdCache.UndoData() &&
+               nickId2KeyIdCache.UndoData();
     }
 private:
-    //TODO: move it to other dbcache file
-/*  CSimpleKVCache     prefixType             value           variable           */
-/*  -------------------- --------------------   -------------   --------------------- */
-    // best blockHash
-    CSimpleKVCache< dbk::BEST_BLOCKHASH,      uint256>        blockHashCache;
-
-
-
 /*  CCompositeKVCache     prefixType            key              value           variable           */
 /*  -------------------- --------------------   --------------  -------------   --------------------- */
     // <prefix$RegID -> KeyID>

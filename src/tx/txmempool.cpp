@@ -8,6 +8,7 @@
 #include "main.h"
 #include "persistence/txdb.h"
 #include "tx/tx.h"
+#include "miner/miner.h"
 
 using namespace std;
 
@@ -32,8 +33,8 @@ CTxMemPoolEntry::CTxMemPoolEntry(const CTxMemPoolEntry &other) {
     this->nTxSize   = other.nTxSize;
     this->dPriority = other.dPriority;
 
-    this->nTime     = other.nTime;
-    this->height   = other.height;
+    this->nTime  = other.nTime;
+    this->height = other.height;
 }
 
 CTxMemPool::CTxMemPool() {
@@ -94,32 +95,30 @@ void CTxMemPool::QueryHash(vector<uint256> &txids) {
 bool CTxMemPool::CheckTxInMemPool(const uint256 &txid, const CTxMemPoolEntry &memPoolEntry, CValidationState &state,
                                   bool bExecute) {
     // is it already confirmed in block
-    if (cw->txCache.HaveTx(txid))
+    if (cw->txCache.HaveTx(txid) != uint256())
         return state.Invalid(ERRORMSG("CheckTxInMemPool() : txid: %s has been confirmed", txid.GetHex()), REJECT_INVALID,
                              "tx-duplicate-confirmed");
 
     // is it within valid height
     static int validHeight = SysCfg().GetTxCacheHeight();
-    if (!memPoolEntry.GetTransaction()->IsValidHeight(chainActive.Height() + 1, validHeight)) {
+    if (!memPoolEntry.GetTransaction()->IsValidHeight(chainActive.Height(), validHeight)) {
         return state.Invalid(ERRORMSG("CheckTxInMemPool() : txid: %s beyond the scope of valid height", txid.GetHex()),
                              REJECT_INVALID, "tx-invalid-height");
     }
 
-    auto spCW = std::make_shared<CCacheWrapper>(*cw);
+    auto spCW = std::make_shared<CCacheWrapper>(cw.get());
 
     if (bExecute) {
-        if (!memPoolEntry.GetTransaction()->ExecuteTx(chainActive.Height() + 1, 0, *spCW, state)) {
-            if (SysCfg().IsLogFailures()) {
-                pCdMan->pLogCache->SetExecuteFail(chainActive.Height() + 1, memPoolEntry.GetTransaction()->GetHash(),
-                                                  state.GetRejectCode(), state.GetRejectReason());
-            }
+        uint32_t fuelRate  = GetElementForBurn(chainActive.Tip());
+        uint32_t blockTime = chainActive.Height();
+        CTxExecuteContext context(chainActive.Height(), 0, fuelRate, blockTime, spCW.get(), &state);
+        if (!memPoolEntry.GetTransaction()->ExecuteTx(context)) {
+            pCdMan->pLogCache->SetExecuteFail(chainActive.Height(), memPoolEntry.GetTransaction()->GetHash(),
+                                              state.GetRejectCode(), state.GetRejectReason());
             return false;
         }
     }
 
-    // Need to re-sync all to cache layer except for transaction cache, as it's depend on
-    // the global transaction cache to verify whether a transaction(txid) has been confirmed
-    // already in block.
     spCW->Flush();
 
     return true;
@@ -159,12 +158,12 @@ uint64_t CTxMemPool::Size() {
     return memPoolTxs.size();
 }
 
-bool CTxMemPool::Exists(uint256 txid) {
+bool CTxMemPool::Exists(const uint256 txid) {
     LOCK(cs);
     return ((memPoolTxs.count(txid) != 0));
 }
 
-std::shared_ptr<CBaseTx> CTxMemPool::Lookup(uint256 txid) const {
+std::shared_ptr<CBaseTx> CTxMemPool::Lookup(const uint256 txid) const {
     LOCK(cs);
     typename map<uint256, CTxMemPoolEntry>::const_iterator i = memPoolTxs.find(txid);
     if (i == memPoolTxs.end())
