@@ -19,7 +19,7 @@ using namespace std;
 static const int32_t INIT_TX_VERSION = 1;
 
 enum TxType: uint8_t {
-    NULL_TX                     = 0,     //!< NULL_TX
+    NULL_TX                     = 0,    //!< NULL_TX
 
     /** R1 Tx types */
     BLOCK_REWARD_TX             = 1,    //!< Miner Block Reward Tx
@@ -51,7 +51,7 @@ enum TxType: uint8_t {
     CDP_LIQUIDATE_TX            = 23,   //!< CDP Liquidation Tx (partial or full)
 
     DEX_TRADEPAIR_PROPOSE_TX    = 81,   //!< Owner proposes a trade pair on DEX
-    DEX_TRADEPAIR_LIST_TX       = 82,   //!< Owner lists a traide pair on DEX
+    DEX_TRADEPAIR_LIST_TX       = 82,   //!< Owner lists a trade pair on DEX
     DEX_TRADEPAIR_DELIST_TX     = 83,   //!< Owner or validators delist a trade pair
     DEX_LIMIT_BUY_ORDER_TX      = 84,   //!< dex buy limit price order Tx
     DEX_LIMIT_SELL_ORDER_TX     = 85,   //!< dex sell limit price order Tx
@@ -63,13 +63,12 @@ enum TxType: uint8_t {
 };
 
 struct TxTypeHash {
-    size_t operator()(const TxType &type) const noexcept {
-        return std::hash<uint8_t>{}(type);
-    }
+    size_t operator()(const TxType &type) const noexcept { return std::hash<uint8_t>{}(type); }
 };
 
 static const unordered_set<string> kFeeSymbolSet = {
-    SYMB::WICC, SYMB::WUSD
+    SYMB::WICC,
+    SYMB::WUSD
 };
 
 inline string GetFeeSymbolSetStr() {
@@ -82,7 +81,7 @@ inline string GetFeeSymbolSetStr() {
         }
     }
     return ret;
-};
+}
 
 /**
  * TxTypeKey -> {   TxTypeName,
@@ -98,10 +97,10 @@ static const unordered_map<TxType, std::tuple<string, uint64_t, uint64_t, uint64
 
 { BLOCK_REWARD_TX,          std::make_tuple("BLOCK_REWARD_TX",          0,          0,         0,          0            ) },
 { ACCOUNT_REGISTER_TX,      std::make_tuple("ACCOUNT_REGISTER_TX",      0,          10000,     10000,      10000        ) }, //0.0001 WICC, optional
-{ BCOIN_TRANSFER_TX,        std::make_tuple("BCOIN_TRANSFER_TX",        10000,      10000,     10000,      10000        ) }, //0.0001 WICC
-{ LCONTRACT_DEPLOY_TX,      std::make_tuple("LCONTRACT_DEPLOY_TX",      100000000,  100000000, 100000000,  100000000    ) }, //1 WICC (unit fuel rate)
-{ LCONTRACT_INVOKE_TX,      std::make_tuple("LCONTRACT_INVOKE_TX",      100000,     100000,    100000,     100000       ) }, //0.001 WICC, min fees
-{ DELEGATE_VOTE_TX,         std::make_tuple("DELEGATE_VOTE_TX",         10000,      10000,     10000,      10000        ) }, //0.0001 WICC
+{ BCOIN_TRANSFER_TX,        std::make_tuple("BCOIN_TRANSFER_TX",        0,          10000,     10000,      10000        ) }, //0.0001 WICC
+{ LCONTRACT_DEPLOY_TX,      std::make_tuple("LCONTRACT_DEPLOY_TX",      0,          100000000, 100000000,  100000000    ) }, //1 WICC (unit fuel rate)
+{ LCONTRACT_INVOKE_TX,      std::make_tuple("LCONTRACT_INVOKE_TX",      0,          100000,    100000,     100000       ) }, //0.001 WICC, min fees
+{ DELEGATE_VOTE_TX,         std::make_tuple("DELEGATE_VOTE_TX",         0,          10000,     10000,      10000        ) }, //0.0001 WICC
 
 { BCOIN_TRANSFER_MTX,       std::make_tuple("BCOIN_TRANSFER_MTX",       10000,      10000,     10000,      10000        ) }, //0.0001 WICC
 { FCOIN_STAKE_TX,           std::make_tuple("FCOIN_STAKE_TX",           10000,      10000,     10000,      10000        ) }, //0.0001 WICC

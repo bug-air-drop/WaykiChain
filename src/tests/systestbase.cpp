@@ -44,11 +44,6 @@ bool PrintTestNotSetPara() {
         MilliSleep(500);
         exit(0);
     }
-    if (!SysCfg().GetArg("-isdbtraversal", flag)) {
-        cout << "Warning: the test of config file the isdbtraversal param must be true" << endl;
-        MilliSleep(500);
-        exit(0);
-    }
 
     if (!SysCfg().GetArg("-regtest", flag)) {
         cout << "Warning: the test of config file the regtest param must be 1" << endl;
@@ -104,7 +99,7 @@ bool AppInit(int argc, char *argv[], boost::thread_group &threadGroup) {
             exit(ret);
         }
 
-        SysCfg().SoftSetBoolArg("-server", true);
+        SysCfg().SoftSetBoolArg("-rpcserver", true);
 
         fRet = AppInit(threadGroup);
     } catch (std::exception &e) {
@@ -506,7 +501,7 @@ bool SysTestBase::IsAllTxInBlock() {
 
     Value value;
     if (CommandLineRPC_GetValue(argc, argv, value)) {
-        value = find_value(value.get_obj(), "UnConfirmTx");
+        value = find_value(value.get_obj(), "unconfirmed_tx");
         if (0 == value.get_array().size()) return true;
     }
     return false;
@@ -548,17 +543,6 @@ bool SysTestBase::GenerateOneBlock() {
             }
         } while (high + 1 > height);
         BOOST_CHECK(conter < 80);
-        return true;
-    }
-    return false;
-}
-
-bool SysTestBase::SetAddrGenerteBlock(const char *addr) {
-    const char *argv[] = {"rpctest", "generateblock", addr};
-    int argc           = sizeof(argv) / sizeof(char *);
-
-    Value value;
-    if (CommandLineRPC_GetValue(argc, argv, value)) {
         return true;
     }
     return false;
@@ -669,7 +653,7 @@ bool SysTestBase::IsTxUnConfirmdInWallet(const uint256 &txid) {
     return false;
 }
 
-bool SysTestBase::GetRegID(string &strAddr, string &regId) {
+bool SysTestBase::GegRegId(string &strAddr, string &regId) {
     Value value = GetAccountInfo(strAddr);
 
     regId = "RegID";
@@ -690,7 +674,7 @@ bool SysTestBase::IsTxInTipBlock(const uint256 &txid) {
     return true;
 }
 
-bool SysTestBase::GetRegID(string &strAddr, CRegID &regId) {
+bool SysTestBase::GegRegId(string &strAddr, CRegID &regId) {
     CAccount account;
     CKeyID keyid;
     if (!GetKeyId(strAddr, keyid)) {

@@ -112,7 +112,7 @@ string GetWarnings(string strFor);
 /** Retrieve a transaction (from memory pool, or from disk, if possible) */
 bool GetTransaction(std::shared_ptr<CBaseTx> &pBaseTx, const uint256 &hash, CContractDBCache &scriptDBCache, bool bSearchMempool = true);
 /** Retrieve a transaction height comfirmed in block*/
-int32_t GetTxConfirmHeight(const uint256 &hash, CContractDBCache &scriptDBCache);
+int32_t GetTxConfirmHeight(const uint256 &hash, CContractDBCache &contractCache);
 
 /** Abort with a message */
 bool AbortNode(const string &msg);
@@ -132,8 +132,6 @@ std::shared_ptr<CBaseTx> CreateNewEmptyTransaction(uint8_t txType);
 struct CNodeStateStats {
     int32_t nMisbehavior;
 };
-
-int64_t GetMinRelayFee(const CBaseTx *pBaseTx, uint32_t nBytes, bool fAllowFree);
 
 /** Check for standard transaction types
     @return True if all outputs (scriptPubKeys) use only standard transaction forms
@@ -711,6 +709,10 @@ void Serialize(Stream &os, const std::shared_ptr<CBaseTx> &pa, int32_t nType, in
             Serialize(os, *((CCoinRewardTx *)(pa.get())), nType, nVersion); break;
         case UCOIN_BLOCK_REWARD_TX:
             Serialize(os, *((CUCoinBlockRewardTx *)(pa.get())), nType, nVersion); break;
+        case UCONTRACT_DEPLOY_TX:
+            Serialize(os, *((CUniversalContractDeployTx *)(pa.get())), nType, nVersion); break;
+        case UCONTRACT_INVOKE_TX:
+            Serialize(os, *((CUniversalContractInvokeTx *)(pa.get())), nType, nVersion); break;
         case PRICE_FEED_TX:
             Serialize(os, *((CPriceFeedTx *)(pa.get())), nType, nVersion); break;
         case PRICE_MEDIAN_TX:
@@ -741,7 +743,6 @@ void Serialize(Stream &os, const std::shared_ptr<CBaseTx> &pa, int32_t nType, in
                 pa->nTxType, GetTxType(pa->nTxType)));
             break;
     }
-
 }
 
 
@@ -818,6 +819,16 @@ void Unserialize(Stream &is, std::shared_ptr<CBaseTx> &pa, int32_t nType, int32_
         case UCOIN_BLOCK_REWARD_TX: {
             pa = std::make_shared<CUCoinBlockRewardTx>();
             Unserialize(is, *((CUCoinBlockRewardTx *)(pa.get())), nType, nVersion);
+            break;
+        }
+        case UCONTRACT_DEPLOY_TX: {
+            pa = std::make_shared<CUniversalContractDeployTx>();
+            Unserialize(is, *((CUniversalContractDeployTx *)(pa.get())), nType, nVersion);
+            break;
+        }
+        case UCONTRACT_INVOKE_TX: {
+            pa = std::make_shared<CUniversalContractInvokeTx>();
+            Unserialize(is, *((CUniversalContractInvokeTx *)(pa.get())), nType, nVersion);
             break;
         }
         case PRICE_FEED_TX: {

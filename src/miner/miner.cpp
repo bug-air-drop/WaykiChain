@@ -80,38 +80,39 @@ uint32_t GetElementForBurn(CBlockIndex *pIndex) {
 // Sort transactions by priority and fee to decide priority orders to process transactions.
 void GetPriorityTx(vector<TxPriority> &vecPriority, const int32_t nFuelRate) {
     vecPriority.reserve(mempool.memPoolTxs.size());
-    static double dPriority     = 0;
-    static double dFeePerKb     = 0;
-    static uint32_t nTxSize     = 0;
-    static TokenSymbol coinType = SYMB::WUSD;
+    static double dPriority      = 0;
+    static double dFeePerKb      = 0;
+    static uint32_t nTxSize      = 0;
+    static TokenSymbol feeSymbol = SYMB::WUSD;
     static uint64_t nFees       = 0;
 
-    uint64_t slideWindowBlockCount;
-    pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindowBlockCount);
-    int32_t height            = chainActive.Height();
-    uint64_t bcoinMedianPrice = pCdMan->pPpCache->GetBcoinMedianPrice(height, slideWindowBlockCount);
-    uint64_t fcoinMedianPrice = pCdMan->pPpCache->GetFcoinMedianPrice(height, slideWindowBlockCount);
-    auto GetCoinMedianPrice   = [&](const TokenSymbol &coinType) -> uint64_t {
-        if (coinType == SYMB::WICC)
+    uint64_t slideWindow;
+    pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
+    int32_t height = chainActive.Height();
+    // fee symbol should be WICC or WUSD only.
+    uint64_t scoinMedianPrice = 10000;  // boosted by 10^4
+    uint64_t bcoinMedianPrice =
+        pCdMan->pPpCache->GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
+
+    auto GetFeeMedianPrice = [&](const TokenSymbol &symbol) -> uint64_t {
+        if (symbol == SYMB::WICC)
             return bcoinMedianPrice;
-        else if (coinType == SYMB::WGRT)
-            return fcoinMedianPrice;
-        else if (coinType == SYMB::WUSD)
-            return 10000; // boosted by 10^4
+        else if (symbol == SYMB::WUSD)
+            return scoinMedianPrice;
         else
             return 0;
     };
 
     for (map<uint256, CTxMemPoolEntry>::iterator mi = mempool.memPoolTxs.begin(); mi != mempool.memPoolTxs.end(); ++mi) {
         CBaseTx *pBaseTx = mi->second.GetTransaction().get();
-        if (!pBaseTx->IsBlockRewardTx() && !pCdMan->pTxCache->HaveTx(pBaseTx->GetHash())) {
+        if (!pBaseTx->IsBlockRewardTx() && pCdMan->pTxCache->HaveTx(pBaseTx->GetHash()) == uint256()) {
             nTxSize   = mi->second.GetTxSize();
-            coinType  = std::get<0>(mi->second.GetFees());
+            feeSymbol = std::get<0>(mi->second.GetFees());
             nFees     = std::get<1>(mi->second.GetFees());
-            dFeePerKb = double(GetCoinMedianPrice(coinType)) / kPercentBoost *
-                        (nFees - pBaseTx->GetFuel(nFuelRate)) / (nTxSize / 1000.0);
+            dFeePerKb = double(GetFeeMedianPrice(feeSymbol)) / kPercentBoost * (nFees - pBaseTx->GetFuel(nFuelRate)) /
+                        (nTxSize / 1000.0);
             LogPrint("MINER", "GetPriority, medianPrice: %llu, nFees: %llu, fuel: %llu, nTxSize: %u\n",
-                GetCoinMedianPrice(coinType), nFees, pBaseTx->GetFuel(nFuelRate), nTxSize);
+                     GetFeeMedianPrice(feeSymbol), nFees, pBaseTx->GetFuel(nFuelRate), nTxSize);
             dPriority = mi->second.GetPriority();
             vecPriority.push_back(TxPriority(dPriority, dFeePerKb, mi->second.GetTransaction()));
         }
@@ -157,7 +158,7 @@ bool CreateBlockRewardTx(const int64_t currentTime, const CAccount &delegate, CA
         auto pRewardTx          = (CUCoinBlockRewardTx *)pBlock->vptx[0].get();
         pRewardTx->txUid        = delegate.regid;
         pRewardTx->valid_height = pBlock->GetHeight();
-        pRewardTx->profits      = delegate.ComputeBlockInflateInterest(pBlock->GetHeight());
+        pRewardTx->inflated_bcoins= delegate.ComputeBlockInflateInterest(pBlock->GetHeight());
 
         auto pPriceMedianTx          = (CBlockPriceMedianTx *)pBlock->vptx[1].get();
         pPriceMedianTx->txUid        = delegate.regid;
@@ -197,7 +198,7 @@ static void ShuffleDelegates(const int32_t nCurHeight, vector<CRegID> &delegateL
     }
 }
 
-bool VerifyPosTx(const CBlock *pBlock, CCacheWrapper &cwIn, bool bNeedRunTx) {
+bool VerifyRewardTx(const CBlock *pBlock, CCacheWrapper &cwIn, bool bNeedRunTx) {
     uint32_t maxNonce = SysCfg().GetBlockMaxNonce();
 
     vector<CRegID> delegateList;
@@ -208,15 +209,15 @@ bool VerifyPosTx(const CBlock *pBlock, CCacheWrapper &cwIn, bool bNeedRunTx) {
 
     CRegID regId;
     if (!GetCurrentDelegate(pBlock->GetTime(), pBlock->GetHeight(), delegateList, regId))
-        return ERRORMSG("VerifyPosTx() : failed to get current delegate");
+        return ERRORMSG("VerifyRewardTx() : failed to get current delegate");
     CAccount curDelegate;
     if (!cwIn.accountCache.GetAccount(regId, curDelegate))
-        return ERRORMSG("VerifyPosTx() : failed to get current delegate's account, regId=%s", regId.ToString());
+        return ERRORMSG("VerifyRewardTx() : failed to get current delegate's account, regId=%s", regId.ToString());
     if (pBlock->GetNonce() > maxNonce)
-        return ERRORMSG("VerifyPosTx() : invalid nonce: %u", pBlock->GetNonce());
+        return ERRORMSG("VerifyRewardTx() : invalid nonce: %u", pBlock->GetNonce());
 
     if (pBlock->GetMerkleRootHash() != pBlock->BuildMerkleTree())
-        return ERRORMSG("VerifyPosTx() : wrong merkle root hash");
+        return ERRORMSG("VerifyRewardTx() : wrong merkle root hash");
 
     auto spCW = std::make_shared<CCacheWrapper>(cwIn);
 
@@ -224,50 +225,50 @@ bool VerifyPosTx(const CBlock *pBlock, CCacheWrapper &cwIn, bool bNeedRunTx) {
     if (pBlock->GetHeight() != 1 || pBlock->GetPrevBlockHash() != SysCfg().GetGenesisBlockHash()) {
         CBlock previousBlock;
         if (!ReadBlockFromDisk(pBlockIndex, previousBlock))
-            return ERRORMSG("VerifyPosTx() : read block info failed from disk");
+            return ERRORMSG("VerifyRewardTx() : read block info failed from disk");
 
         CAccount prevDelegateAcct;
         if (!spCW->accountCache.GetAccount(previousBlock.vptx[0]->txUid, prevDelegateAcct))
-            return ERRORMSG("VerifyPosTx() : failed to get previous delegate's account, regId=%s",
+            return ERRORMSG("VerifyRewardTx() : failed to get previous delegate's account, regId=%s",
                 previousBlock.vptx[0]->txUid.ToString());
 
         if (pBlock->GetBlockTime() - previousBlock.GetBlockTime() < GetBlockInterval(pBlock->GetHeight())) {
             if (prevDelegateAcct.regid == curDelegate.regid)
-                return ERRORMSG("VerifyPosTx() : one delegate can't produce more than one block at the same slot");
+                return ERRORMSG("VerifyRewardTx() : one delegate can't produce more than one block at the same slot");
         }
     }
 
     CAccount account;
     if (spCW->accountCache.GetAccount(pBlock->vptx[0]->txUid, account)) {
         if (curDelegate.regid != account.regid) {
-            return ERRORMSG("VerifyPosTx() : delegate should be(%s) vs what we got(%s)", curDelegate.regid.ToString(),
-                            account.regid.ToString());
+            return ERRORMSG("VerifyRewardTx() : delegate should be (%s) vs what we got (%s)",
+                            curDelegate.regid.ToString(), account.regid.ToString());
         }
 
         const auto &blockHash      = pBlock->ComputeSignatureHash();
         const auto &blockSignature = pBlock->GetSignature();
 
         if (blockSignature.size() == 0 || blockSignature.size() > MAX_SIGNATURE_SIZE) {
-            return ERRORMSG("VerifyPosTx() : invalid block signature size, hash=%s", blockHash.ToString());
+            return ERRORMSG("VerifyRewardTx() : invalid block signature size, hash=%s", blockHash.ToString());
         }
 
         if (!VerifySignature(blockHash, blockSignature, account.owner_pubkey))
             if (!VerifySignature(blockHash, blockSignature, account.miner_pubkey))
-                return ERRORMSG("VerifyPosTx() : verify signature error");
+                return ERRORMSG("VerifyRewardTx() : verify signature error");
     } else {
-        return ERRORMSG("VerifyPosTx() : failed to get account info, regId=%s", pBlock->vptx[0]->txUid.ToString());
+        return ERRORMSG("VerifyRewardTx() : failed to get account info, regId=%s", pBlock->vptx[0]->txUid.ToString());
     }
 
     if (pBlock->vptx[0]->nVersion != INIT_TX_VERSION)
-        return ERRORMSG("VerifyPosTx() : transaction version %d vs current %d", pBlock->vptx[0]->nVersion, INIT_TX_VERSION);
+        return ERRORMSG("VerifyRewardTx() : transaction version %d vs current %d", pBlock->vptx[0]->nVersion, INIT_TX_VERSION);
 
     if (bNeedRunTx) {
         uint64_t totalFuel    = 0;
         uint64_t totalRunStep = 0;
         for (uint32_t i = 1; i < pBlock->vptx.size(); i++) {
             shared_ptr<CBaseTx> pBaseTx = pBlock->vptx[i];
-            if (spCW->txCache.HaveTx(pBaseTx->GetHash()))
-                return ERRORMSG("VerifyPosTx() : duplicate transaction, txid=%s", pBaseTx->GetHash().GetHex());
+            if (spCW->txCache.HaveTx(pBaseTx->GetHash()) != uint256())
+                return ERRORMSG("VerifyRewardTx() : duplicate transaction, txid=%s", pBaseTx->GetHash().GetHex());
 
             CValidationState state;
             if (!pBaseTx->ExecuteTx(pBlock->GetHeight(), i, *spCW, state)) {
@@ -275,22 +276,22 @@ bool VerifyPosTx(const CBlock *pBlock, CCacheWrapper &cwIn, bool bNeedRunTx) {
                     pCdMan->pLogCache->SetExecuteFail(pBlock->GetHeight(), pBaseTx->GetHash(), state.GetRejectCode(),
                                                       state.GetRejectReason());
                 }
-                return ERRORMSG("VerifyPosTx() : failed to execute transaction, txid=%s", pBaseTx->GetHash().GetHex());
+                return ERRORMSG("VerifyRewardTx() : failed to execute transaction, txid=%s", pBaseTx->GetHash().GetHex());
             }
 
             totalRunStep += pBaseTx->nRunStep;
             if (totalRunStep > MAX_BLOCK_RUN_STEP)
-                return ERRORMSG("VerifyPosTx() : block total run steps(%lu) exceed max run step(%lu)", totalRunStep,
+                return ERRORMSG("VerifyRewardTx() : block total run steps(%lu) exceed max run step(%lu)", totalRunStep,
                                 MAX_BLOCK_RUN_STEP);
 
             totalFuel += pBaseTx->GetFuel(pBlock->GetFuelRate());
-            LogPrint("fuel", "VerifyPosTx() : total fuel:%d, tx fuel:%d runStep:%d fuelRate:%d txid:%s \n", totalFuel,
+            LogPrint("fuel", "VerifyRewardTx() : total fuel:%d, tx fuel:%d runStep:%d fuelRate:%d txid:%s\n", totalFuel,
                      pBaseTx->GetFuel(pBlock->GetFuelRate()), pBaseTx->nRunStep, pBlock->GetFuelRate(),
                      pBaseTx->GetHash().GetHex());
         }
 
         if (totalFuel != pBlock->GetFuel())
-            return ERRORMSG("VerifyPosTx() : total fuel(%lu) mismatch what(%u) in block header", totalFuel,
+            return ERRORMSG("VerifyRewardTx() : total fuel(%lu) mismatch what(%u) in block header", totalFuel,
                             pBlock->GetFuel());
     }
 
@@ -309,16 +310,6 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
     uint32_t nBlockMaxSize = SysCfg().GetArg("-blockmaxsize", DEFAULT_BLOCK_MAX_SIZE);
     // Limit to between 1K and MAX_BLOCK_SIZE-1K for sanity:
     nBlockMaxSize = std::max((uint32_t)1000, std::min((uint32_t)(MAX_BLOCK_SIZE - 1000), nBlockMaxSize));
-
-    // How much of the block should be dedicated to high-priority transactions,
-    // included regardless of the fees they pay
-    uint32_t nBlockPrioritySize = SysCfg().GetArg("-blockprioritysize", DEFAULT_BLOCK_PRIORITY_SIZE);
-    nBlockPrioritySize          = std::min(nBlockMaxSize, nBlockPrioritySize);
-
-    // Minimum block size you want to create; block will be filled with free transactions
-    // until there are no more or the block reaches this size:
-    uint32_t nBlockMinSize = SysCfg().GetArg("-blockminsize", DEFAULT_BLOCK_MIN_SIZE);
-    nBlockMinSize          = std::min(nBlockMaxSize, nBlockMinSize);
 
     // Collect memory pool transactions into the block
     {
@@ -351,15 +342,6 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
             if (totalBlockSize + txSize >= nBlockMaxSize) {
                 LogPrint("MINER", "CreateNewBlockPreStableCoinRelease() : exceed max block size, txid: %s\n",
                          pBaseTx->GetHash().GetHex());
-                continue;
-            }
-
-            // Skip trx with MinRelayTxFee fee for this block once the accumulated tx size surpasses the minimum block size.
-            const double dFeePerKb = std::get<1>(item);
-            if ((dFeePerKb != 0) && (dFeePerKb < CBaseTx::nMinRelayTxFee) && (totalBlockSize + txSize >= nBlockMinSize)) {
-                LogPrint("MINER", "CreateNewBlockPreStableCoinRelease() : skip free transaction, txid: %s\n",
-                         pBaseTx->GetHash().GetHex());
-
                 continue;
             }
 
@@ -420,7 +402,7 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
         miningBlockInfo.totalBlockSize = totalBlockSize;
         miningBlockInfo.totalFees      = totalFees;
 
-        ((CBlockRewardTx *)pBlock->vptx[0].get())->reward = reward;
+        ((CBlockRewardTx *)pBlock->vptx[0].get())->reward_fees = reward;
 
         // Fill in header
         pBlock->SetPrevBlockHash(pIndexPrev->GetBlockHash());
@@ -483,16 +465,6 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
     // Limit to between 1K and MAX_BLOCK_SIZE-1K for sanity:
     nBlockMaxSize = std::max((uint32_t)1000, std::min((uint32_t)(MAX_BLOCK_SIZE - 1000), nBlockMaxSize));
 
-    // How much of the block should be dedicated to high-priority transactions,
-    // included regardless of the fees they pay
-    uint32_t nBlockPrioritySize = SysCfg().GetArg("-blockprioritysize", DEFAULT_BLOCK_PRIORITY_SIZE);
-    nBlockPrioritySize          = std::min(nBlockMaxSize, nBlockPrioritySize);
-
-    // Minimum block size you want to create; block will be filled with free transactions
-    // until there are no more or the block reaches this size:
-    uint32_t nBlockMinSize = SysCfg().GetArg("-blockminsize", DEFAULT_BLOCK_MIN_SIZE);
-    nBlockMinSize          = std::min(nBlockMaxSize, nBlockMinSize);
-
     // Collect memory pool transactions into the block
     {
         LOCK2(cs_main, mempool.cs);
@@ -530,14 +502,6 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
             if (totalBlockSize + txSize >= nBlockMaxSize) {
                 LogPrint("MINER", "CreateNewBlockStableCoinRelease() : exceed max block size, txid: %s\n",
                          pBaseTx->GetHash().GetHex());
-                continue;
-            }
-
-            // Skip trx with MinRelayTxFee fee for this block once the accumulated tx size surpasses the minimum block size.
-            const double dFeePerKb = std::get<1>(item);
-            if ((dFeePerKb != 0) && (dFeePerKb < CBaseTx::nMinRelayTxFee) && (totalBlockSize + txSize >= nBlockMinSize)) {
-                LogPrint("MINER", "CreateNewBlockStableCoinRelease() : skip fee too litter in fee/kb: %.4f < %lld, txid: %s\n",
-                         dFeePerKb, CBaseTx::nMinRelayTxFee, pBaseTx->GetHash().GetHex());
                 continue;
             }
 
@@ -602,13 +566,13 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
         miningBlockInfo.totalBlockSize = totalBlockSize;
         miningBlockInfo.totalFees      = totalFees;
 
-        ((CUCoinBlockRewardTx *)pBlock->vptx[0].get())->rewards = rewards;
+        ((CUCoinBlockRewardTx *)pBlock->vptx[0].get())->reward_fees = rewards;
 
         CBlockPriceMedianTx *pPriceMedianTx = (CBlockPriceMedianTx *)pBlock->vptx[1].get();
         map<CoinPricePair, uint64_t> mapMedianPricePoints;
-        uint64_t slideWindowBlockCount;
-        cwIn.sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindowBlockCount);
-        cwIn.ppCache.GetBlockMedianPricePoints(height, slideWindowBlockCount, mapMedianPricePoints);
+        uint64_t slideWindow;
+        cwIn.sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
+        cwIn.ppCache.GetBlockMedianPricePoints(height, slideWindow, mapMedianPricePoints);
         pPriceMedianTx->SetMedianPricePoints(mapMedianPricePoints);
 
         // Fill in header

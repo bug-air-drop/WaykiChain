@@ -10,7 +10,7 @@
 #include "entities/key.h"
 #include "commons/uint256.h"
 #include "commons/util.h"
-#include "vm/luavm/vmrunenv.h"
+#include "vm/luavm/luavmrunenv.h"
 
 #include <stdint.h>
 
@@ -74,24 +74,9 @@ bool CContractDBCache::EraseContractData(const CRegID &contractRegId, const stri
     return contractDataCache.EraseData(key);
 }
 
-bool CContractDBCache::GetContractData(const CRegID &contractRegId, vector<std::pair<string, string>> &contractData) {
-    map<std::pair<string, string>, string> elements;
-    if (!contractDataCache.GetAllElements(contractRegId.ToRawString(), elements)) {
-        return false;
-    }
-
-    for (const auto item : elements) {
-        contractData.emplace_back(std::get<1>(item.first), item.second);
-    }
-
-    return true;
-}
-
 bool CContractDBCache::Flush() {
     contractCache.Flush();
-    txOutputCache.Flush();
     txDiskPosCache.Flush();
-    contractRelatedKidCache.Flush();
     contractDataCache.Flush();
     contractAccountCache.Flush();
 
@@ -100,29 +85,9 @@ bool CContractDBCache::Flush() {
 
 uint32_t CContractDBCache::GetCacheSize() const {
     return contractCache.GetCacheSize() +
-        txOutputCache.GetCacheSize() +
         txDiskPosCache.GetCacheSize() +
-        contractRelatedKidCache.GetCacheSize() +
         contractDataCache.GetCacheSize() +
         contractAccountCache.GetCacheSize();
-}
-
-bool CContractDBCache::WriteTxOutput(const uint256 &txid, const vector<CVmOperate> &vOutput) {
-    return txOutputCache.SetData(txid, vOutput);
-}
-
-bool CContractDBCache::GetContractAccounts(const CRegID &scriptId, map<string, string> &mapAcc) {
-    return false;
-    /* TODO: GetContractAccounts
-    return pBase->GetContractAccounts(scriptId, mapAcc);
-    */
-}
-
-bool CContractDBCache::GetTxOutput(const uint256 &txid, vector<CVmOperate> &vOutput) {
-    vector<CVmOperate> value;
-    if (!txOutputCache.GetData(txid, value))
-        return false;
-    return true;
 }
 
 bool CContractDBCache::ReadTxIndex(const uint256 &txid, CDiskTxPos &pos) {
@@ -135,7 +100,7 @@ bool CContractDBCache::SetTxIndex(const uint256 &txid, const CDiskTxPos &pos) {
 
 bool CContractDBCache::WriteTxIndexes(const vector<pair<uint256, CDiskTxPos> > &list) {
     for (auto it : list) {
-        LogPrint("txindex", "txid:%s dispos: nFile=%d, nPos=%d nTxOffset=%d\n",
+        LogPrint("DEBUG", "txid:%s dispos: nFile=%d, nPos=%d nTxOffset=%d\n",
                 it.first.GetHex(), it.second.nFile, it.second.nPos, it.second.nTxOffset);
 
         if (!txDiskPosCache.SetData(it.first, it.second))
@@ -144,11 +109,16 @@ bool CContractDBCache::WriteTxIndexes(const vector<pair<uint256, CDiskTxPos> > &
     return true;
 }
 
-bool CContractDBCache::SetTxRelAccout(const uint256 &txid, const set<CKeyID> &relAccount) {
-    return contractRelatedKidCache.SetData(txid, relAccount);
-}
-bool CContractDBCache::GetTxRelAccount(const uint256 &txid, set<CKeyID> &relAccount) {
-    return contractRelatedKidCache.GetData(txid, relAccount);
-}
+shared_ptr<CDBContractDatasGetter> CContractDBCache::CreateContractDatasGetter(
+    const CRegID &contractRegid, const string &contractKeyPrefix, uint32_t count,
+    const string &lastKey) {
 
-bool CContractDBCache::EraseTxRelAccout(const uint256 &txid) { return contractRelatedKidCache.EraseData(txid); }
+    assert(contractDataCache.GetBasePtr() == nullptr && "only support top level cache");
+    if (contractKeyPrefix.size() > CDBContractKey::MAX_KEY_SIZE) {
+        LogPrint("ERROR", "CContractDBCache::CreateContractDatasGetter() contractKeyPrefix.size()=%u "
+                 "exceeded the max size=%u", contractKeyPrefix.size(), CDBContractKey::MAX_KEY_SIZE);
+        return nullptr;
+    }
+    auto prefix = make_pair(contractRegid.ToRawString(), CDBContractKey(contractKeyPrefix));
+    return make_shared<CDBContractDatasGetter>(contractDataCache, prefix);
+}

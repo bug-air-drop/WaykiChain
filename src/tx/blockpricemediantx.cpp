@@ -6,6 +6,14 @@
 #include "blockpricemediantx.h"
 #include "main.h"
 
+// Generally, index is an auto increment variable.
+static uint256 OrderIdGenerator(const uint256 &txid, const uint32_t index) {
+    CHashWriter ss(SER_GETHASH, 0);
+    ss << txid << VARINT(index);
+
+    return ss.GetHash();
+}
+
 bool CBlockPriceMedianTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
     // TODO: txUid == miner?
     IMPLEMENT_CHECK_TX_REGID(txUid.type());
@@ -17,14 +25,14 @@ bool CBlockPriceMedianTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidation
  *  force settle/liquidate any under-collateralized CDP (collateral ratio <= 104%)
  */
 bool CBlockPriceMedianTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state) {
-    uint64_t slideWindowBlockCount;
-    if (!cw.sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindowBlockCount)) {
+    uint64_t slideWindow;
+    if (!cw.sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow)) {
         return state.DoS(100, ERRORMSG("CBlockPriceMedianTx::CheckTx, read MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT error"),
                          READ_SYS_PARAM_FAIL, "read-sysparamdb-err");
     }
 
     map<CoinPricePair, uint64_t> mapMedianPricePoints;
-    if (!cw.ppCache.GetBlockMedianPricePoints(height, slideWindowBlockCount, mapMedianPricePoints)) {
+    if (!cw.ppCache.GetBlockMedianPricePoints(height, slideWindow, mapMedianPricePoints)) {
         return state.DoS(100, ERRORMSG("CBlockPriceMedianTx::ExecuteTx, failed to get block median price points"),
                          READ_PRICE_POINT_FAIL, "bad-read-price-points");
     }
@@ -53,13 +61,16 @@ bool CBlockPriceMedianTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper
     do {
 
         // 0. acquire median prices
-        uint64_t bcoinMedianPrice = cw.ppCache.GetBcoinMedianPrice(height, slideWindowBlockCount);
+        // TODO: multi stable coin
+        uint64_t bcoinMedianPrice =
+            cw.ppCache.GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
         if (bcoinMedianPrice == 0) {
             LogPrint("CDP", "CBlockPriceMedianTx::ExecuteTx, failed to acquire bcoin median price\n");
             break;
         }
 
-        uint64_t fcoinMedianPrice = cw.ppCache.GetFcoinMedianPrice(height, slideWindowBlockCount);
+        uint64_t fcoinMedianPrice =
+            cw.ppCache.GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WGRT, SYMB::USD));
         if (fcoinMedianPrice == 0) {
             LogPrint("CDP", "CBlockPriceMedianTx::ExecuteTx, failed to acquire fcoin median price\n");
             break;
@@ -94,20 +105,28 @@ bool CBlockPriceMedianTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper
         // 3. force settle each cdp
         if (forceLiquidateCDPList.size() == 0) {
             break;
+        } else {
+            // TODO: remove me.
+            LogPrint("CDP", "CBlockPriceMedianTx::ExecuteTx, have %llu cdps to force settle, in detail:\n",
+                     forceLiquidateCDPList.size());
+            for (const auto &cdp : forceLiquidateCDPList) {
+                LogPrint("CDP", "%s\n", cdp.ToString());
+            }
         }
 
         int32_t cdpIndex = 0;
         CAccount fcoinGenesisAccount;
         cw.accountCache.GetFcoinGenesisAccount(fcoinGenesisAccount);
         uint64_t currRiskReserveScoins = fcoinGenesisAccount.GetToken(SYMB::WUSD).free_amount;
-        string orderIdFactor           = GetHash().GetHex();
         uint32_t orderIndex            = 0;
         for (auto cdp : forceLiquidateCDPList) {
             if (++cdpIndex > kForceSettleCDPMaxCountPerBlock)
                 break;
 
-            LogPrint("CDP", "CBlockPriceMedianTx::ExecuteTx, begin to force settle CDP (%s), currRiskReserveScoins: %llu\n",
-                    cdp.ToString(), currRiskReserveScoins);
+            LogPrint("CDP",
+                     "CBlockPriceMedianTx::ExecuteTx, begin to force settle CDP (%s), currRiskReserveScoins: %llu, "
+                     "index: %u\n",
+                     cdp.ToString(), currRiskReserveScoins, cdpIndex);
 
             // Suppose we have 120 (owed scoins' amount), 30, 50 three cdps, but current risk reserve scoins is 100,
             // then skip the 120 cdp and settle the 30 and 50 cdp.
@@ -130,8 +149,8 @@ bool CBlockPriceMedianTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper
             }
             auto pBcoinSellMarketOrder = CDEXSysOrder::CreateSellMarketOrder(
                 CTxCord(height, index), SYMB::WUSD, SYMB::WICC, cdp.total_staked_bcoins);
-            string bcoinSellMarketOrderId = orderIdFactor + std::to_string(orderIndex ++);
-            if (!cw.dexCache.CreateActiveOrder(uint256S(bcoinSellMarketOrderId), *pBcoinSellMarketOrder)) {
+            uint256 bcoinSellMarketOrderId = OrderIdGenerator(GetHash(), orderIndex++);
+            if (!cw.dexCache.CreateActiveOrder(bcoinSellMarketOrderId, *pBcoinSellMarketOrder)) {
                 return state.DoS(100, ERRORMSG("CBlockPriceMedianTx::ExecuteTx, create sys order for SellBcoinForScoin (%s) failed",
                                 pBcoinSellMarketOrder->ToString()), CREATE_SYS_ORDER_FAILED, "create-sys-order-failed");
             }
@@ -143,7 +162,7 @@ bool CBlockPriceMedianTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper
                     "Placed BcoinSellMarketOrder: %s, orderId: %s\n"
                     "No need to infate WGRT coins: %llu vs %llu\n"
                     "prevRiskReserveScoins: %lu -> currRiskReserveScoins: %lu\n",
-                    pBcoinSellMarketOrder->ToString(), uint256S(bcoinSellMarketOrderId).GetHex(),
+                    pBcoinSellMarketOrder->ToString(), bcoinSellMarketOrderId.GetHex(),
                     bcoinsValueInScoin, cdp.total_owed_scoins,
                     currRiskReserveScoins,
                     currRiskReserveScoins - cdp.total_owed_scoins);
@@ -164,8 +183,8 @@ bool CBlockPriceMedianTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper
 
                 auto pFcoinSellMarketOrder =
                     CDEXSysOrder::CreateSellMarketOrder(CTxCord(height, index), SYMB::WUSD, SYMB::WGRT, fcoinsToInflate);
-                string fcoinSellMarketOrderId = orderIdFactor + std::to_string(orderIndex ++);
-                if (!cw.dexCache.CreateActiveOrder(uint256S(fcoinSellMarketOrderId), *pFcoinSellMarketOrder)) {
+                uint256 fcoinSellMarketOrderId = OrderIdGenerator(GetHash(), orderIndex++);
+                if (!cw.dexCache.CreateActiveOrder(fcoinSellMarketOrderId, *pFcoinSellMarketOrder)) {
                     return state.DoS(100, ERRORMSG("CBlockPriceMedianTx::ExecuteTx, create sys order for SellFcoinForScoin (%s) failed",
                             pFcoinSellMarketOrder->ToString()), CREATE_SYS_ORDER_FAILED, "create-sys-order-failed");
                 }
@@ -174,8 +193,8 @@ bool CBlockPriceMedianTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper
                     "Placed BcoinSellMarketOrder:  %s, orderId: %s\n"
                     "Placed FcoinSellMarketOrder:  %s, orderId: %s\n"
                     "prevRiskReserveScoins: %lu -> currRiskReserveScoins: %lu\n",
-                    pBcoinSellMarketOrder->ToString(), uint256S(bcoinSellMarketOrderId).GetHex(),
-                    pFcoinSellMarketOrder->ToString(), uint256S(fcoinSellMarketOrderId).GetHex(),
+                    pBcoinSellMarketOrder->ToString(), bcoinSellMarketOrderId.GetHex(),
+                    pFcoinSellMarketOrder->ToString(), fcoinSellMarketOrderId.GetHex(),
                     currRiskReserveScoins,
                     currRiskReserveScoins - cdp.total_owed_scoins);
             }
@@ -205,7 +224,7 @@ string CBlockPriceMedianTx::ToString(CAccountDBCache &accountCache) {
                                  item.second);
     }
 
-    return strprintf("txType=%s, hash=%s, ver=%d, txUid=%s, llFees=%ld, median_price_points=%s, valid_height=%d\n",
+    return strprintf("txType=%s, hash=%s, ver=%d, txUid=%s, llFees=%ld, median_price_points=%s, valid_height=%d",
                      GetTxType(nTxType), GetHash().GetHex(), nVersion, txUid.ToString(), llFees, pricePoints,
                      valid_height);
 }

@@ -41,11 +41,11 @@ string CMulsigTx::ToString(CAccountDBCache &accountCache) {
     for (const auto &item : signaturePairs) {
         signatures += strprintf("%s, ", item.ToString());
     }
+
     string str = strprintf(
-        "txType=%s, hash=%s, ver=%d, required=%d, %s, desId=%s, bcoins=%ld, llFees=%ld, "
-        "memo=%s,  valid_height=%d\n",
-        GetTxType(nTxType), GetHash().ToString(), nVersion, required, signatures, desId,
-        bcoins, llFees, HexStr(memo), valid_height);
+        "txType=%s, hash=%s, ver=%d, required=%d, %s, desId=%s, bcoins=%ld, llFees=%llu, memo=%s,  valid_height=%d",
+        GetTxType(nTxType), GetHash().ToString(), nVersion, required, signatures, desId, bcoins, llFees, HexStr(memo),
+        valid_height);
 
     return str;
 }
@@ -152,6 +152,7 @@ bool CMulsigTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CVal
 }
 
 bool CMulsigTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
+    IMPLEMENT_DISABLE_TX_PRE_STABLE_COIN_RELEASE;
     IMPLEMENT_CHECK_TX_FEE;
     IMPLEMENT_CHECK_TX_MEMO;
 

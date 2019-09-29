@@ -20,7 +20,7 @@
 #include "crypto/hash.h"
 #include "commons/util.h"
 #include "main.h"
-#include "vm/luavm/vmrunenv.h"
+#include "vm/luavm/luavmrunenv.h"
 #include "miner/miner.h"
 #include "config/version.h"
 
@@ -150,12 +150,9 @@ bool CBaseTx::CheckSignatureSize(const vector<unsigned char> &signature) const {
 }
 
 string CBaseTx::ToString(CAccountDBCache &accountCache) {
-    string str = strprintf("txType=%s, hash=%s, ver=%d, pubkey=%s, llFees=%ld, keyid=%s, valid_height=%d\n",
-                            GetTxType(nTxType), GetHash().ToString(), nVersion,
-                            txUid.get<CPubKey>().ToString(),
-                            llFees, txUid.get<CPubKey>().GetKeyId().ToAddress(), valid_height);
-
-    return str;
+    return strprintf("txType=%s, hash=%s, ver=%d, pubkey=%s, llFees=%llu, keyid=%s, valid_height=%d",
+                     GetTxType(nTxType), GetHash().ToString(), nVersion, txUid.get<CPubKey>().ToString(), llFees,
+                     txUid.get<CPubKey>().GetKeyId().ToAddress(), valid_height);
 }
 
 bool CBaseTx::GetInvolvedKeyIds(CCacheWrapper &cw, set<CKeyID> &keyIds) {

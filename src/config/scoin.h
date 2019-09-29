@@ -15,7 +15,7 @@
 using namespace std;
 
 static const uint16_t kPercentBoost                         = 10000;
-static const uint32_t kTotalFundCoinGenesisReleaseAmount    = 10500000; // 21/2 million WGRT
+static const uint64_t kTotalFundCoinGenesisReleaseAmount    = 19950000000; // 21 * 95% billion = WGRT
 
 static const uint16_t kFcoinGenesisIssueTxIndex             = 1;
 static const uint16_t kFcoinGenesisRegisterTxIndex          = 2;
@@ -59,7 +59,6 @@ struct SysParamTypeHash {
         return std::hash<uint8_t>{}(type);
     }
 };
-
 
 static const unordered_map<SysParamType, std::tuple<string, uint64_t>, SysParamTypeHash> SysParamTable = {
     { MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT,         std::make_tuple("A",    11)         },

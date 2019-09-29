@@ -126,9 +126,6 @@ Array RPCConvertValues(const string &strMethod, const vector<string> &strParams)
     if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
     if (strMethod == "setgenerate"            && n > 1) ConvertTo<int64_t>(params[1]);
 
-    if (strMethod == "settxfee"               && n > 0) ConvertTo<double>(params[0]); // deprecated
-    if (strMethod == "getbalance"             && n > 1) ConvertTo<int64_t>(params[1]);
-
     if (strMethod == "walletpassphrase"       && n > 1) ConvertTo<int64_t>(params[1]);
 
     if (strMethod == "addmulsigaddr"          && n > 0) ConvertTo<int64_t>(params[0]);
@@ -138,19 +135,17 @@ Array RPCConvertValues(const string &strMethod, const vector<string> &strParams)
     if (strMethod == "signtxraw"              && n > 1) ConvertTo<Array>(params[1]);
 
     if (strMethod == "getblock"               && n > 1) ConvertTo<bool>(params[1]);
-    if (strMethod == "getchainstate"          && n > 0) ConvertTo<int32_t>(params[0]);
+    if (strMethod == "getchaininfo"          && n > 0) ConvertTo<int32_t>(params[0]);
     if (strMethod == "verifychain"            && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "verifychain"            && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "getrawmempool"          && n > 0) ConvertTo<bool>(params[0]);
-    if (strMethod == "getalltxinfo"           && n > 0) ConvertTo<int32_t>(params[0]);
-
     if (strMethod == "getnewaddr"             && n > 0) ConvertTo<bool>(params[0]);
 
     if (strMethod == "submitaccountregistertx"      && n > 1) ConvertTo<int64_t>(params[1]);
 
-    if(strMethod == "submitdelegatevotetx"          && n > 1) ConvertTo<Array>(params[1]);
-    if(strMethod == "submitdelegatevotetx"          && n > 2) ConvertTo<int64_t>(params[2]);
-    if(strMethod == "submitdelegatevotetx"          && n > 3) ConvertTo<int32_t>(params[3]);
+    if (strMethod == "submitdelegatevotetx"         && n > 1) ConvertTo<Array>(params[1]);
+    if (strMethod == "submitdelegatevotetx"         && n > 2) ConvertTo<int64_t>(params[2]);
+    if (strMethod == "submitdelegatevotetx"         && n > 3) ConvertTo<int32_t>(params[3]);
 
     if (strMethod == "submitcontractdeploytx"       && n > 2) ConvertTo<int64_t>(params[2]);
     if (strMethod == "submitcontractdeploytx"       && n > 3) ConvertTo<int32_t>(params[3]);
@@ -160,16 +155,15 @@ Array RPCConvertValues(const string &strMethod, const vector<string> &strParams)
     if (strMethod == "submitcontractcalltx"         && n > 5) ConvertTo<int32_t>(params[5]);
 
     if (strMethod == "listaddr"               && n > 1) ConvertTo<bool>(params[1]);
-    if (strMethod == "listunconfirmedtx"      && n > 0) ConvertTo<bool>(params[0]);
     if (strMethod == "disconnectblock"        && n > 0) ConvertTo<int32_t>(params[0]);
 
     if (strMethod == "listcontracts"          && n > 0) ConvertTo<bool>(params[0]);
     if (strMethod == "getblock"               && n > 0) { if (params[0].get_str().size()<32) ConvertTo<int32_t>(params[0]);}
 
-    /****** generate a digitally signed raw transaction for network submission via sendtxraw  **********/
-    if (strMethod == "genmulsigtx"         && n > 2) ConvertTo<double>(params[2]);
-    if (strMethod == "genmulsigtx"         && n > 3) ConvertTo<double>(params[3]);
-    if (strMethod == "genmulsigtx"         && n > 4) ConvertTo<int32_t>(params[4]);
+    /****** generate a digitally signed raw transaction for network submission via submittxraw  **********/
+    if (strMethod == "genmulsigtx"            && n > 2) ConvertTo<double>(params[2]);
+    if (strMethod == "genmulsigtx"            && n > 3) ConvertTo<double>(params[3]);
+    if (strMethod == "genmulsigtx"            && n > 4) ConvertTo<int32_t>(params[4]);
 
     /********************************************************************************************************************/
     if (strMethod == "getcontractdata"        && n > 2) ConvertTo<bool>(params[2]);
@@ -177,8 +171,6 @@ Array RPCConvertValues(const string &strMethod, const vector<string> &strParams)
     if (strMethod == "listtx"                 && n > 0) ConvertTo<int32_t>(params[0]);
     if (strMethod == "listtx"                 && n > 1) ConvertTo<int32_t>(params[1]);
     if (strMethod == "listdelegates"          && n > 0) ConvertTo<int32_t>(params[0]);
-    if (strMethod == "listtransactions"       && n > 1) ConvertTo<int32_t>(params[1]);
-    if (strMethod == "listtransactions"       && n > 2) ConvertTo<int32_t>(params[2]);
 
     if (strMethod == "invalidateblock"        && n > 0) { if (params[0].get_str().size() < 32) ConvertTo<int32_t>(params[0]); }
 

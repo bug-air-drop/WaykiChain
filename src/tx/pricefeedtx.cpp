@@ -15,6 +15,7 @@
 #include "config/version.h"
 
 bool CPriceFeedTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
+    IMPLEMENT_DISABLE_TX_PRE_STABLE_COIN_RELEASE;
     IMPLEMENT_CHECK_TX_FEE;
     IMPLEMENT_CHECK_TX_REGID(txUid.type());
 
@@ -80,7 +81,7 @@ string CPriceFeedTx::ToString(CAccountDBCache &accountCache) {
         str += pp.ToString() + ", ";
     }
 
-    return strprintf("txType=%s, hash=%s, ver=%d, txUid=%s, fee_symbol=%s, llFees=%ld, price_points=%s, valid_height=%d\n",
+    return strprintf("txType=%s, hash=%s, ver=%d, txUid=%s, fee_symbol=%s, llFees=%llu, price_points=%s, valid_height=%d",
                      GetTxType(nTxType), GetHash().ToString(), nVersion, txUid.ToString(), fee_symbol, llFees, str, valid_height);
 }
 

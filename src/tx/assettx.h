@@ -113,7 +113,7 @@ public:
         switch (type) {
             case OWNER_UID:     return get<CUserID>().GetSerializeSize(serializedType, nVersion);
             case NAME:          return ::GetSerializeSize(get<string>(), serializedType, nVersion);
-            case MINT_AMOUNT:   return ::GetSerializeSize(get<uint64_t>(), serializedType, nVersion);
+            case MINT_AMOUNT:   return ::GetSerializeSize(VARINT(get<uint64_t>()), serializedType, nVersion);
             default: break;
         }
         return 0;
@@ -125,7 +125,7 @@ public:
         switch (type) {
             case OWNER_UID:     s << get<CUserID>(); break;
             case NAME:          s << get<string>(); break;
-            case MINT_AMOUNT:   s << get<uint64_t>(); break;
+            case MINT_AMOUNT:   s << VARINT(get<uint64_t>()); break;
             default: {
                 LogPrint("ERROR", "CAssetUpdateData::Serialize(), Invalid Asset update type=%d\n", type);
                 throw ios_base::failure("Invalid Asset update type");
@@ -151,7 +151,7 @@ public:
             }
             case MINT_AMOUNT: {
                 uint64_t mintAmount;
-                s >> mintAmount;
+                s >> VARINT(mintAmount);
                 value = mintAmount;
                 break;
             }
@@ -178,7 +178,7 @@ public:
     TokenSymbol asset_symbol;       // symbol of asset that needs to be updated
     CAssetUpdateData update_data;   // update data(type, value)
 public:
-    CAssetUpdateTx() : CBaseTx(ASSET_UPDATE_TX) {};
+    CAssetUpdateTx() : CBaseTx(ASSET_UPDATE_TX) {}
 
     CAssetUpdateTx(const CUserID &txUidIn, int32_t validHeightIn, const TokenSymbol &feeSymbolIn,
                    uint64_t feesIn, const TokenSymbol &assetSymbolIn, const CAssetUpdateData &updateData)

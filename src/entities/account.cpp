@@ -80,11 +80,9 @@ bool CAccount::OperateBalance(const TokenSymbol &tokenSymbol, const BalanceOpTyp
     }
 }
 
-uint64_t CAccount::ComputeVoteStakingInterest(const vector<CCandidateReceivedVote> &candidateVotes,
-                                              const uint32_t currHeight,
-                                              const FeatureForkVersionEnum &featureForkVersion) {
-    if (candidateVotes.empty()) {
-        LogPrint("DEBUG", "1st-time vote by the account, hence interest inflation.");
+uint64_t CAccount::ComputeVoteStakingInterest(const uint64_t lastVotedBcoins, const uint32_t currHeight) {
+    if (lastVotedBcoins == 0) {
+        LogPrint("profits", "1st-time vote by the account, hence interest inflation.");
         return 0;  // 0 for the very 1st vote
     }
 
@@ -92,30 +90,18 @@ uint64_t CAccount::ComputeVoteStakingInterest(const vector<CCandidateReceivedVot
     uint64_t endHeight   = currHeight;
     uint8_t beginSubsidy = ::GetSubsidyRate(last_vote_height);
     uint8_t endSubsidy   = ::GetSubsidyRate(currHeight);
-    uint64_t amount      = 0;
-    switch (featureForkVersion) {
-        case MAJOR_VER_R1:
-            amount = candidateVotes.begin()->GetVotedBcoins();  // one bcoin eleven votes
-            break;
-        case MAJOR_VER_R2:
-            for (const auto &item : candidateVotes) {
-                amount += item.GetVotedBcoins();  // one bcoin one vote
-            }
-            break;
-        default:
-            LogPrint("ERROR", "CAccount::ComputeVoteStakingInterest, unexpected feature fork version: %d\n",
-                     featureForkVersion);
-            break;
-    }
-    LogPrint("DEBUG", "beginSubsidy: %u, endSubsidy: %u, beginHeight: %llu, endHeight: %llu\n", beginSubsidy,
-             endSubsidy, beginHeight, endHeight);
 
-    auto ComputeInterest = [](const uint64_t amount, const uint8_t subsidy, const uint64_t beginHeight,
-                              const uint64_t endHeight, const uint32_t yearHeight) -> uint64_t {
+    auto ComputeInterest = [currHeight](const CRegID &regid, const uint64_t votedBcoins, const uint8_t subsidy,
+                              const uint64_t beginHeight, const uint64_t endHeight,
+                              const uint32_t yearHeight) -> uint64_t {
         uint64_t holdHeight = endHeight - beginHeight;
-        uint64_t interest   = (uint64_t)(amount * ((long double)holdHeight * subsidy / yearHeight / 100));
-        LogPrint("DEBUG", "amount: %llu, subsidy: %u, beginHeight: %llu, endHeight: %llu, yearHeight: %u, interest: %llu\n",
-                 amount, subsidy, beginHeight, endHeight, yearHeight, interest);
+        uint64_t interest   = (long double)votedBcoins * holdHeight * subsidy / yearHeight / 100;
+
+        LogPrint("profits",
+                 "compute vote staking interest to voter: %s, current height: %u\n"
+                 "interest = votedBcoins * (endHeight - beginHeight) * subsidy / yearHeight / 100\n"
+                 "formula: %llu = 1.0 * %llu * (%llu - %llu) * %u / %u / 100\n",
+                 regid.ToString(), currHeight, interest, votedBcoins, endHeight, beginHeight, subsidy, yearHeight);
         return interest;
     };
 
@@ -124,32 +110,33 @@ uint64_t CAccount::ComputeVoteStakingInterest(const vector<CCandidateReceivedVot
     uint8_t subsidy     = beginSubsidy;
     while (subsidy != endSubsidy) {
         uint32_t jumpHeight = ::GetJumpHeightBySubsidy(currHeight, subsidy - 1);
-        interest += ComputeInterest(amount, subsidy, beginHeight, jumpHeight, yearHeight);
+        interest += ComputeInterest(regid, lastVotedBcoins, subsidy, beginHeight, jumpHeight, yearHeight);
         beginHeight = jumpHeight;
         subsidy -= 1;
     }
 
-    interest += ComputeInterest(amount, subsidy, beginHeight, endHeight, yearHeight);
-    LogPrint("DEBUG", "updateHeight: %llu, currHeight: %llu, freeze value: %llu\n", last_vote_height, currHeight,
-             candidateVotes.begin()->GetVotedBcoins());
+    interest += ComputeInterest(regid, lastVotedBcoins, subsidy, beginHeight, endHeight, yearHeight);
 
     return interest;
 }
 
 uint64_t CAccount::ComputeBlockInflateInterest(const uint32_t currHeight) const {
-    if (GetFeatureForkVersion(currHeight) == MAJOR_VER_R1) return 0;
+    if (GetFeatureForkVersion(currHeight) == MAJOR_VER_R1)
+        return 0;
 
-    uint8_t subsidy     = ::GetSubsidyRate(currHeight);
-    uint64_t holdHeight = 1;
-    uint32_t yearHeight = ::GetYearBlockCount(currHeight);
-    uint64_t profits =
-        (long double)(received_votes * IniCfg().GetTotalDelegateNum() * holdHeight * subsidy) / yearHeight / 100;
+    uint8_t subsidy      = ::GetSubsidyRate(currHeight);
+    uint64_t holdHeight  = 1;
+    uint32_t yearHeight  = ::GetYearBlockCount(currHeight);
+    uint32_t delegateNum = IniCfg().GetTotalDelegateNum();
+    uint64_t interest    = (long double)received_votes * delegateNum * holdHeight * subsidy / yearHeight / 100;
+
     LogPrint("profits",
-             "account: %s, currHeight: %llu, received_votes: %llu, subsidy: %u, holdHeight: %llu, yearHeight: "
-             "%u, llProfits: %llu\n",
-             regid.ToString(), currHeight, received_votes, subsidy, holdHeight, yearHeight, profits);
+             "compute block inflate interest to miner: %s, current height: %u\n"
+             "interest = received_votes * delegateNum * holdHeight * subsidy / yearHeight / 100\n"
+             "formula: %llu = 1.0 * %llu * %u * %llu * %u / %u / 100\n",
+             regid.ToString(), currHeight, interest, received_votes, delegateNum, holdHeight, subsidy, yearHeight);
 
-    return profits;
+    return interest;
 }
 
 uint64_t CAccount::GetVotedBcoins(const vector<CCandidateReceivedVote> &candidateVotes, const uint64_t currHeight) {
@@ -253,7 +240,7 @@ bool CAccount::IsFcoinWithinRange(uint64_t nAddMoney) {
     return true;
 }
 
-bool CAccount::ProcessDelegateVotes(const vector<CCandidateVote> &candidateVotesIn,
+bool CAccount::ProcessCandidateVotes(const vector<CCandidateVote> &candidateVotesIn,
                                     vector<CCandidateReceivedVote> &candidateVotesInOut, const uint32_t currHeight,
                                     const CAccountDBCache &accountCache, vector<CReceipt> &receipts) {
     if (currHeight < last_vote_height) {
@@ -289,33 +276,33 @@ bool CAccount::ProcessDelegateVotes(const vector<CCandidateVote> &candidateVotes
                 uint64_t currVotes = itVote->GetVotedBcoins();
 
                 if (!IsBcoinWithinRange(vote.GetVotedBcoins()))
-                    return ERRORMSG("ProcessDelegateVotes() : oper fund value exceeds maximum ");
+                    return ERRORMSG("ProcessCandidateVotes() : oper fund value exceeds maximum ");
 
                 itVote->SetVotedBcoins(currVotes + vote.GetVotedBcoins());
 
                 if (!IsBcoinWithinRange(itVote->GetVotedBcoins()))
-                    return ERRORMSG("ProcessDelegateVotes() : fund value exceeds maximum");
+                    return ERRORMSG("ProcessCandidateVotes() : fund value exceeds maximum");
 
             } else {  // new vote
                 if (candidateVotesInOut.size() == IniCfg().GetMaxVoteCandidateNum()) {
-                    return ERRORMSG("ProcessDelegateVotes() : MaxVoteCandidateNum reached. Must revoke old votes 1st.");
+                    return ERRORMSG("ProcessCandidateVotes() : MaxVoteCandidateNum reached. Must revoke old votes 1st.");
                 }
 
                 candidateVotesInOut.push_back(vote);
             }
         } else if (MINUS_BCOIN == voteType) {
             // if (currHeight - last_vote_height < 100) {
-            //     return ERRORMSG("ProcessDelegateVotes() : last vote not cooled down yet: lastVoteHeigh=%d",
+            //     return ERRORMSG("ProcessCandidateVotes() : last vote not cooled down yet: lastVoteHeigh=%d",
             //                     last_vote_height);
             // }
             if  (itVote != candidateVotesInOut.end()) { //existing vote
                 uint64_t currVotes = itVote->GetVotedBcoins();
 
                 if (!IsBcoinWithinRange(vote.GetVotedBcoins()))
-                    return ERRORMSG("ProcessDelegateVotes() : oper fund value exceeds maximum ");
+                    return ERRORMSG("ProcessCandidateVotes() : oper fund value exceeds maximum ");
 
                 if (itVote->GetVotedBcoins() < vote.GetVotedBcoins())
-                    return ERRORMSG("ProcessDelegateVotes() : oper fund value exceeds delegate fund value");
+                    return ERRORMSG("ProcessCandidateVotes() : oper fund value exceeds delegate fund value");
 
                 itVote->SetVotedBcoins(currVotes - vote.GetVotedBcoins());
 
@@ -323,10 +310,10 @@ bool CAccount::ProcessDelegateVotes(const vector<CCandidateVote> &candidateVotes
                     candidateVotesInOut.erase(itVote);
 
             } else {
-                return ERRORMSG("ProcessDelegateVotes() : revocation votes not exist");
+                return ERRORMSG("ProcessCandidateVotes() : revocation votes not exist");
             }
         } else {
-            return ERRORMSG("ProcessDelegateVotes() : operType: %d invalid", voteType);
+            return ERRORMSG("ProcessCandidateVotes() : operType: %d invalid", voteType);
         }
     }
 
@@ -339,7 +326,7 @@ bool CAccount::ProcessDelegateVotes(const vector<CCandidateVote> &candidateVotes
     uint64_t newTotalVotes = GetVotedBcoins(candidateVotesInOut, currHeight);
     uint64_t totalBcoins   = GetToken(SYMB::WICC).free_amount + lastTotalVotes;
     if (totalBcoins < newTotalVotes) {
-        return  ERRORMSG("ProcessDelegateVotes() : delegate votes exceeds account bcoins");
+        return  ERRORMSG("ProcessCandidateVotes() : delegate votes exceeds account bcoins");
     }
 
     uint64_t free_bcoins  = totalBcoins - newTotalVotes;
@@ -355,7 +342,7 @@ bool CAccount::ProcessDelegateVotes(const vector<CCandidateVote> &candidateVotes
     }
 
     auto featureForkVersion          = GetFeatureForkVersion(currHeight);
-    uint64_t interestAmountToInflate = ComputeVoteStakingInterest(candidateVotesInOut, currHeight, featureForkVersion);
+    uint64_t interestAmountToInflate = ComputeVoteStakingInterest(lastTotalVotes, currHeight);
     if (!IsBcoinWithinRange(interestAmountToInflate))
         return false;
 
@@ -376,7 +363,7 @@ bool CAccount::ProcessDelegateVotes(const vector<CCandidateVote> &candidateVotes
             return false;
     }
 
-    LogPrint("INFLATE", "Account(%s) received vote staking interest amount (bcoin/fcoins): %lld\n",
+    LogPrint("profits", "Account(%s) received vote staking interest amount (bcoin/fcoins): %lld\n",
             regid.ToString(), interestAmountToInflate);
 
     // Attention: update last vote height after computing vote staking interest.

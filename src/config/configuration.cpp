@@ -302,7 +302,7 @@ vector<uint32_t> G_CONFIG_TABLE::pnSeed = {0xF6CF612F, 0xA4D80E6A, 0x35DD70C1, 0
 
 // Network Magic No.
 uint8_t G_CONFIG_TABLE::Message_mainNet[MESSAGE_START_SIZE] = {0xff, 0x42, 0x1d, 0x1a};
-uint8_t G_CONFIG_TABLE::Message_testNet[MESSAGE_START_SIZE] = {0xfd, 0x7d, 0x5c, 0xd0};
+uint8_t G_CONFIG_TABLE::Message_testNet[MESSAGE_START_SIZE] = {0xfd, 0x7d, 0x5c, 0xd2};
 uint8_t G_CONFIG_TABLE::Message_regTest[MESSAGE_START_SIZE] = {0xfe, 0xfa, 0xd3, 0xc6};
 
 // Address Prefix
@@ -342,10 +342,10 @@ uint32_t G_CONFIG_TABLE::MaxVoteCandidateNum = 22;
 
 // Block height to enable feature fork version
 uint32_t G_CONFIG_TABLE::nFeatureForkHeight_mainNet = 6000000;
-uint32_t G_CONFIG_TABLE::nFeatureForkHeight_testNet = 1000000;
+uint32_t G_CONFIG_TABLE::nFeatureForkHeight_testNet = 520;
 uint32_t G_CONFIG_TABLE::nFeatureForkHeight_regNet  = 10;
 
 // Block height for stable coin genesis
 uint32_t G_CONFIG_TABLE::nStableScoinGenesisHeight_mainNet = 5880000;
-uint32_t G_CONFIG_TABLE::nStableScoinGenesisHeight_testNet = 588000;
+uint32_t G_CONFIG_TABLE::nStableScoinGenesisHeight_testNet = 500;
 uint32_t G_CONFIG_TABLE::nStableScoinGenesisHeight_regNet  = 8;

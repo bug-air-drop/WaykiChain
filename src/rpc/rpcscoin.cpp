@@ -42,11 +42,11 @@ Value submitpricefeedtx(const Array& params, bool fHelp) {
             "\nExamples:\n" +
             HelpExampleCli("submitpricefeedtx",
                            "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" "
-                           "\"[{\\\"coin\\\": \\\"WICC\\\", \\\"currency\\\": \\\"USD\\\", \\\"price\\\": 2500}]\"\n") +
+                           "\"[{\\\"coin\\\": \\\"WICC\\\", \\\"currency\\\": \\\"USD\\\", \\\"price\\\": 2500}]\"") +
             "\nAs json rpc call\n" +
             HelpExampleRpc("submitpricefeedtx",
-                           "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" \"[{\"coin\": \"WICC\", \"currency\": \"USD\", "
-                           "\"price\": 2500}]\"\n"));
+                           "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\", [{\"coin\": \"WICC\", \"currency\": \"USD\", "
+                           "\"price\": 2500}]"));
     }
 
     const CUserID &feedUid = RPC_PARAM::GetUserId(params[0].get_str());
@@ -101,18 +101,18 @@ Value submitfcoinstaketx(const Array& params, bool fHelp) {
             "\nArguments:\n"
             "1.\"addr\":             (string, required)\n"
             "2.\"fcoin_amount\":     (numeric, required) amount of fcoins to stake\n"
-            "3. \"symbol:fee:unit\": (string:numeric:string, optional) fee paid to miner, default is WICC:10000:sawi\n"
+            "3.\"symbol:fee:unit\":  (string:numeric:string, optional) fee paid to miner, default is WICC:10000:sawi\n"
             "\nResult:\n"
             "\"txid\"                (string) The transaction id.\n"
             "\nExamples:\n"
-            + HelpExampleCli("submitfcoinstaketx", "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" 200000000\n")
+            + HelpExampleCli("submitfcoinstaketx", "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" 200000000")
             + "\nAs json rpc call\n"
-            + HelpExampleRpc("submitfcoinstaketx", "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" 200000000\n")
+            + HelpExampleRpc("submitfcoinstaketx", "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\", 200000000")
         );
     }
 
     const CUserID& userId   = RPC_PARAM::GetUserId(params[0]);
-    int64_t stakeAmount     = AmountToRawValue(params[1]);
+    int64_t stakeAmount     = params[1].get_int64();
     ComboMoney cmFee        = RPC_PARAM::GetFee(params, 2, FCOIN_STAKE_TX);
     int32_t validHeight     = chainActive.Height();
     BalanceOpType stakeType = stakeAmount >= 0 ? BalanceOpType::STAKE : BalanceOpType::UNSTAKE;
@@ -269,8 +269,8 @@ Value getscoininfo(const Array& params, bool fHelp){
 
     int32_t height = chainActive.Height();
 
-    uint64_t slideWindowBlockCount = 0;
-    if (!pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindowBlockCount)) {
+    uint64_t slideWindow = 0;
+    if (!pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow)) {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Acquire median price slide window blockcount error");
     }
 
@@ -285,11 +285,13 @@ Value getscoininfo(const Array& params, bool fHelp){
     }
 
     map<CoinPricePair, uint64_t> medianPricePoints;
-    if (!pCdMan->pPpCache->GetBlockMedianPricePoints(height, slideWindowBlockCount, medianPricePoints)) {
+    if (!pCdMan->pPpCache->GetBlockMedianPricePoints(height, slideWindow, medianPricePoints)) {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Acquire median price error");
     }
 
-    uint64_t bcoinMedianPrice      = pCdMan->pPpCache->GetBcoinMedianPrice(height, slideWindowBlockCount);
+    // TODO: multi stable coin
+    uint64_t bcoinMedianPrice =
+        pCdMan->pPpCache->GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
     uint64_t globalCollateralRatio = pCdMan->pCdpCache->cdpMemCache.GetGlobalCollateralRatio(bcoinMedianPrice);
     bool globalCollateralRatioFloorReached =
         pCdMan->pCdpCache->CheckGlobalCollateralRatioFloorReached(bcoinMedianPrice, globalCollateralRatioFloor);
@@ -321,7 +323,7 @@ Value getscoininfo(const Array& params, bool fHelp){
 
     obj.push_back(Pair("height",                                height));
     obj.push_back(Pair("median_price",                          prices));
-    obj.push_back(Pair("slide_window_block_count",              slideWindowBlockCount));
+    obj.push_back(Pair("slide_window_block_count",              slideWindow));
 
     obj.push_back(Pair("global_staked_bcoins",                  globalStakedBcoins));
     obj.push_back(Pair("global_owed_scoins",                    globalOwedScoins));
@@ -369,9 +371,11 @@ Value getusercdp(const Array& params, bool fHelp){
     assert(!txAccount.regid.IsEmpty());
 
     int32_t height = chainActive.Height();
-    uint64_t slideWindowBlockCount;
-    pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindowBlockCount);
-    uint64_t bcoinMedianPrice = pCdMan->pPpCache->GetBcoinMedianPrice(height, slideWindowBlockCount);
+    uint64_t slideWindow;
+    pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
+    // TODO: multi stable coin
+    uint64_t bcoinMedianPrice =
+        pCdMan->pPpCache->GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
 
     Array cdps;
     vector<CUserCDP> userCdps;
@@ -402,9 +406,11 @@ Value getcdp(const Array& params, bool fHelp){
     }
 
     int32_t height = chainActive.Height();
-    uint64_t slideWindowBlockCount;
-    pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindowBlockCount);
-    uint64_t bcoinMedianPrice = pCdMan->pPpCache->GetBcoinMedianPrice(height, slideWindowBlockCount);
+    uint64_t slideWindow;
+    pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
+    // TODO: multi stable coin
+    uint64_t bcoinMedianPrice =
+        pCdMan->pPpCache->GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
 
     uint256 cdpTxId(uint256S(params[0].get_str()));
     CUserCDP cdp;
@@ -678,12 +684,12 @@ Value getdexorder(const Array& params, bool fHelp) {
             "getdexorder \"order_id\"\n"
             "\nget dex order detail.\n"
             "\nArguments:\n"
-            "1.\"order_id\": (string required) order txid\n"
+            "1.\"order_id\":    (string, required) order txid\n"
             "\nResult: object of order detail\n"
             "\nExamples:\n"
-            + HelpExampleCli("getdexorder", "\"c5287324b89793fdf7fa97b6203dfd814b8358cfa31114078ea5981916d7a8ac\" ")
+            + HelpExampleCli("getdexorder", "\"c5287324b89793fdf7fa97b6203dfd814b8358cfa31114078ea5981916d7a8ac\"")
             + "\nAs json rpc call\n"
-            + HelpExampleRpc("getdexorder", "\"c5287324b89793fdf7fa97b6203dfd814b8358cfa31114078ea5981916d7a8ac\" ")
+            + HelpExampleRpc("getdexorder", "\"c5287324b89793fdf7fa97b6203dfd814b8358cfa31114078ea5981916d7a8ac\"")
         );
     }
     const uint256 &orderId = RPC_PARAM::GetTxid(params[0], "order_id");
@@ -701,15 +707,15 @@ Value getdexorder(const Array& params, bool fHelp) {
 extern Value getdexsysorders(const Array& params, bool fHelp) {
      if (fHelp || params.size() > 1) {
         throw runtime_error(
-            "getdexsysorders \"height\"\n"
+            "getdexsysorders [\"height\"]\n"
             "\nget dex system-generated active orders by block height.\n"
             "\nArguments:\n"
-            "1.\"height\": (numeric optional) block height, default is current tip block height\n"
+            "1.\"height\":  (numeric, optional) block height, default is current tip block height\n"
             "\nResult:\n"
-            "\"height\" (string) the specified block height.\n"
-            "\"orders\" (string) a list of system-generated DEX orders.\n"
+            "\"height\"     (string) the specified block height.\n"
+            "\"orders\"     (string) a list of system-generated DEX orders.\n"
             "\nExamples:\n"
-            + HelpExampleCli("getdexsysorders", "10 ")
+            + HelpExampleCli("getdexsysorders", "10")
             + "\nAs json rpc call\n"
             + HelpExampleRpc("getdexsysorders", "10")
         );
@@ -739,21 +745,21 @@ extern Value getdexorders(const Array& params, bool fHelp) {
             "getdexorders [\"begin_height\"] [\"end_height\"] [\"max_count\"] [\"last_pos_info\"]\n"
             "\nget dex all active orders by block height range.\n"
             "\nArguments:\n"
-            "1.\"begin_height\": (numeric optional) the begin block height, default is 0\n"
-            "2.\"end_height\": (numeric optional) the end block height, default is current tip block height\n"
-            "3.\"max_count\": (numeric optional) the max order count to get, default is 500\n"
-            "4.\"last_pos_info\": (string optional) the last position info to get more orders, default is empty\n"
+            "1.\"begin_height\":    (numeric, optional) the begin block height, default is 0\n"
+            "2.\"end_height\":      (numeric, optional) the end block height, default is current tip block height\n"
+            "3.\"max_count\":       (numeric, optional) the max order count to get, default is 500\n"
+            "4.\"last_pos_info\":   (string, optional) the last position info to get more orders, default is empty\n"
             "\nResult:\n"
-            "\"begin_height\" (numeric) the begin block height of returned orders.\n"
-            "\"end_height\" (numeric) the end block height of returned orders.\n"
-            "\"has_more\" (bool) has more orders in db.\n"
-            "\"last_pos_info\" (string) the last position info to get more orders.\n"
-            "\"count\" (numeric) the count of returned orders.\n"
-            "\"orders\" (string) a list of system-generated DEX orders.\n"
+            "\"begin_height\"       (numeric) the begin block height of returned orders.\n"
+            "\"end_height\"         (numeric) the end block height of returned orders.\n"
+            "\"has_more\"           (bool) has more orders in db.\n"
+            "\"last_pos_info\"      (string) the last position info to get more orders.\n"
+            "\"count\"              (numeric) the count of returned orders.\n"
+            "\"orders\"             (string) a list of system-generated DEX orders.\n"
             "\nExamples:\n"
             + HelpExampleCli("getdexorders", "0 100 500")
             + "\nAs json rpc call\n"
-            + HelpExampleRpc("getdexorders", "0 100 500")
+            + HelpExampleRpc("getdexorders", "0, 100, 500")
         );
     }
     int64_t tipHeight = chainActive.Height();
@@ -774,10 +780,11 @@ extern Value getdexorders(const Array& params, bool fHelp) {
 
 
     int64_t maxCount = 500;
-    if (params.size() > 2)
-        endHeight = params[2].get_int64();
-    if (maxCount < 0)
-        throw JSONRPCError(RPC_INVALID_PARAMS, strprintf("max_count=%d must >= 0", maxCount));
+    if (params.size() > 2) {
+        maxCount = params[2].get_int64();
+        if (maxCount < 0)
+            throw JSONRPCError(RPC_INVALID_PARAMS, strprintf("max_count=%d must >= 0", maxCount));
+    }
 
     DEXBlockOrdersCache::KeyType lastKey;
     if (params.size() > 3) {
@@ -809,7 +816,7 @@ extern Value getdexorders(const Array& params, bool fHelp) {
     obj.push_back(Pair("begin_height", (int64_t)pGetter->begin_height));
     obj.push_back(Pair("end_height", (int64_t)pGetter->end_height));
     obj.push_back(Pair("has_more", pGetter->has_more));
-    obj.push_back(Pair("last_pos_info", newLastPosInfo));
+    obj.push_back(Pair("last_pos_info", HexStr(newLastPosInfo)));
     pGetter->ToJson(obj);
     return obj;
 }
@@ -824,19 +831,19 @@ Value submitassetissuetx(const Array& params, bool fHelp) {
             "\nsubmit an asset issue tx.\n"
             "\nthe tx creator must have enough WICC for issued fee(550 WICC).\n"
             "\nArguments:\n"
-            "1.\"addr\": (string required) tx owner address\n"
-            "2.\"asset_symbol\": (string required) asset symbol, E.g WICC | WUSD\n"
-            "3.\"asset_owner_addr\": (string required) asset owner address, can be same as tx owner address\n"
-            "4.\"asset_name\": (string required) asset long name, E.g WaykiChain coin\n"
-            "5.\"total_supply\": (numeric required) asset total supply\n"
-            "6.\"mintable\": (boolean required) whether this asset token can be minted in the future\n"
-            "7.\"symbol:fee:unit\":(string:numeric:string, optional) fee paid for miner, default is WICC:10000:sawi\n"
+            "1.\"addr\":            (string, required) tx owner address\n"
+            "2.\"asset_symbol\":    (string, required) asset symbol, E.g WICC | WUSD\n"
+            "3.\"asset_owner_addr\":(string, required) asset owner address, can be same as tx owner address\n"
+            "4.\"asset_name\":      (string, required) asset long name, E.g WaykiChain coin\n"
+            "5.\"total_supply\":    (numeric, required) asset total supply\n"
+            "6.\"mintable\":        (boolean, required) whether this asset token can be minted in the future\n"
+            "7.\"symbol:fee:unit\": (string:numeric:string, optional) fee paid for miner, default is WICC:10000:sawi\n"
             "\nResult:\n"
-            "\"txid\" (string) The new transaction id.\n"
+            "\"txid\"               (string) The new transaction id.\n"
             "\nExamples:\n"
             + HelpExampleCli("submitassetissuetx", "\"10-2\" \"CNY\" \"10-2\" \"RMB\" 1000000000000000 true")
             + "\nAs json rpc call\n"
-            + HelpExampleRpc("submitassetissuetx", "\"10-2\" \"CNY\" \"10-2\" \"RMB\" 1000000000000000 true")
+            + HelpExampleRpc("submitassetissuetx", "\"10-2\", \"CNY\", \"10-2\", \"RMB\", 1000000000000000, true")
         );
     }
     const CUserID& uid             = RPC_PARAM::GetUserId(params[0]);
@@ -872,17 +879,17 @@ Value submitassetupdatetx(const Array& params, bool fHelp) {
             "\nsubmit an asset update tx.\n"
             "\nthe tx creator must have enough WICC for asset update fee(200 WICC).\n"
             "\nArguments:\n"
-            "1.\"addr\": (string required) tx owner address\n"
-            "2.\"asset_symbol\": (string required) asset symbol, E.g WICC | WUSD\n"
-            "3.\"update_type\": (string required) asset update type, can be (owner_uid, name, mint_amount)\n"
-            "4.\"update_value\": (string required) update the value specified by update_type, value format see the submitassetissuetx\n"
-            "5.\"symbol:fee:unit\":(string:numeric:string, optional) fee paid for miner, default is WICC:10000:sawi\n"
+            "1.\"addr\":            (string, required) tx owner address\n"
+            "2.\"asset_symbol\":    (string, required) asset symbol, E.g WICC | WUSD\n"
+            "3.\"update_type\":     (string, required) asset update type, can be (owner_uid, name, mint_amount)\n"
+            "4.\"update_value\":    (string, required) update the value specified by update_type, value format see the submitassetissuetx\n"
+            "5.\"symbol:fee:unit\": (string:numeric:string, optional) fee paid for miner, default is WICC:10000:sawi\n"
             "\nResult:\n"
-            "\"txid\" (string) The new transaction id.\n"
+            "\"txid\"               (string) The new transaction id.\n"
             "\nExamples:\n"
             + HelpExampleCli("submitassetupdatetx", "\"10-2\" \"CNY\" \"mint_amount\" \"100000000\"")
             + "\nAs json rpc call\n"
-            + HelpExampleRpc("submitassetupdatetx", "\"10-2\" \"CNY\" \"mint_amount\" \"100000000\"")
+            + HelpExampleRpc("submitassetupdatetx", "\"10-2\", \"CNY\", \"mint_amount\", \"100000000\"")
         );
     }
 

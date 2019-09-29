@@ -54,7 +54,7 @@ public:
 
 class CLuaContractInvokeTx : public CBaseTx {
 public:
-    mutable CUserID app_uid;  // app regid or address
+    mutable CUserID app_uid;  // app regid
     uint64_t coin_amount;     // coin amount (coin symbol: WICC)
     string arguments;         // arguments to invoke a contract method
 
@@ -138,7 +138,7 @@ public:
 
 class CUniversalContractInvokeTx : public CBaseTx {
 public:
-    mutable CUserID app_uid;  // app regid or address
+    mutable CUserID app_uid;  // app regid
     string arguments;         // arguments to invoke a contract method
     TokenSymbol coin_symbol;
     uint64_t coin_amount;  // transfer amount to contract account
@@ -181,4 +181,5 @@ public:
     virtual bool CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state);
     virtual bool ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state);
 };
-#endif //TX_CONTRACT_H
+
+#endif  // TX_CONTRACT_H

@@ -14,28 +14,29 @@
 #include "persistence/txdb.h"
 #include "commons/util.h"
 #include "config/version.h"
-#include "vm/luavm/vmrunenv.h"
+#include "vm/luavm/luavmrunenv.h"
 
-static bool GetKeyId(const CAccountDBCache &accountView, const string &userIdStr, CKeyID &keyid) {
-    switch (userIdStr.size()) {
-        case 6: {   // CRegID
-            CRegID regId(userIdStr);
-            keyid = regId.GetKeyId(accountView);
-            break;
-        }
-        case 34: {  // Base58Addr
-            string addr(userIdStr.begin(), userIdStr.end());
-            keyid = CKeyID(addr);
-            break;
-        }
-        //TODO: support nick ID
-        default:
-            return false;
+// get and check fuel limit
+static bool GetFuelLimit(CBaseTx &tx, int32_t height, CCacheWrapper &cw, CValidationState &state, uint64_t &fuelLimit) {
+    uint64_t fuelRate = tx.GetFuelRate(cw.contractCache);
+    if (fuelRate == 0)
+        return state.DoS(100, ERRORMSG("GetFuelLimit, feulRate cannot be 0"), REJECT_INVALID,
+                         "invalid-fuel-rate");
+
+    uint64_t minFee;
+    if (!GetTxMinFee(tx.nTxType, height, tx.fee_symbol, minFee))
+        return state.DoS(100, ERRORMSG("GetFuelLimit, get minFee failed"),
+            REJECT_INVALID, "get-min-fee-failed");
+    if (tx.llFees <= minFee) {
+        return state.DoS(100, ERRORMSG("GetFuelLimit, fees is too small to invoke contract"),
+            REJECT_INVALID, "bad-tx-fee-toosmall");
+
     }
-
-    if (keyid.IsEmpty())
-        return false;
-
+    fuelLimit = ((tx.llFees - minFee) / fuelRate) * 100;
+    if (fuelLimit > MAX_BLOCK_RUN_STEP) {
+        fuelLimit = MAX_BLOCK_RUN_STEP;
+    }
+    assert(fuelLimit > 0);
     return true;
 }
 
@@ -57,13 +58,12 @@ bool CLuaContractDeployTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidatio
                         llFees, llFuel), REJECT_INVALID, "fee-too-litter-to-afford-fuel");
     }
 
-    // If valid height range changed little enough(i.e. 3 blocks), remove it.
     if (GetFeatureForkVersion(height) == MAJOR_VER_R2) {
-        uint64_t slideWindowBlockCount = 0;
-        cw.sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindowBlockCount);
-        uint64_t bcoinMedianPrice = cw.ppCache.GetBcoinMedianPrice(height, slideWindowBlockCount);
-        int32_t txSize            = ::GetSerializeSize(GetNewInstance(), SER_NETWORK, PROTOCOL_VERSION);
-        double dFeePerKb          = double(bcoinMedianPrice) / kPercentBoost * (llFees - llFuel) / (txSize / 1000.0);
+        uint64_t slideWindow = 0;
+        cw.sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
+        uint64_t feeMedianPrice = cw.ppCache.GetMedianPrice(height, slideWindow, CoinPricePair(fee_symbol, SYMB::WUSD));
+        int32_t txSize          = ::GetSerializeSize(GetNewInstance(), SER_NETWORK, PROTOCOL_VERSION);
+        double dFeePerKb        = double(feeMedianPrice) / kPercentBoost * (llFees - llFuel) / (txSize / 1000.0);
         if (dFeePerKb != 0 && dFeePerKb < CBaseTx::nMinRelayTxFee) {
             return state.DoS(100, ERRORMSG("CLuaContractDeployTx::CheckTx, fee too litter in fee/kb: %.4f < %lld",
                             dFeePerKb, CBaseTx::nMinRelayTxFee), REJECT_INVALID, "fee-too-litter-in-fee/kb");
@@ -133,7 +133,7 @@ string CLuaContractDeployTx::ToString(CAccountDBCache &accountCache) {
     CKeyID keyId;
     accountCache.GetKeyId(txUid, keyId);
 
-    return strprintf("txType=%s, hash=%s, ver=%d, txUid=%s, addr=%s, llFees=%llu, valid_height=%d\n",
+    return strprintf("txType=%s, hash=%s, ver=%d, txUid=%s, addr=%s, llFees=%llu, valid_height=%d",
                      GetTxType(nTxType), GetHash().ToString(), nVersion, txUid.ToString(), keyId.ToAddress(), llFees,
                      valid_height);
 }
@@ -165,10 +165,6 @@ bool CLuaContractInvokeTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidatio
         return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::CheckTx, read account failed, regId=%s",
                         txUid.get<CRegID>().ToString()), REJECT_INVALID, "bad-getaccount");
 
-    if (!srcAccount.HaveOwnerPubKey())
-        return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::CheckTx, account unregistered"), REJECT_INVALID,
-                         "bad-account-unregistered");
-
     CUniversalContract contract;
     if (!cw.contractCache.GetContract(app_uid.get<CRegID>(), contract))
         return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::CheckTx, read script failed, regId=%s",
@@ -181,9 +177,11 @@ bool CLuaContractInvokeTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidatio
 }
 
 bool CLuaContractInvokeTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state) {
-    CAccount srcAccount;
-    CAccount desAccount;
 
+    uint64_t fuelLimit;
+    if (!GetFuelLimit(*this, height, cw, state, fuelLimit)) return false;
+
+    CAccount srcAccount;
     if (!cw.accountCache.GetAccount(txUid, srcAccount)) {
         return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, read source addr account info error"),
                          READ_ACCOUNT_FAIL, "bad-read-accountdb");
@@ -201,6 +199,7 @@ bool CLuaContractInvokeTx::ExecuteTx(int32_t height, int32_t index, CCacheWrappe
         return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, save account info error"),
                          WRITE_ACCOUNT_FAIL, "bad-write-accountdb");
 
+    CAccount desAccount;
     if (!cw.accountCache.GetAccount(app_uid, desAccount)) {
         return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, get account info failed by regid:%s",
                         app_uid.get<CRegID>().ToString()), READ_ACCOUNT_FAIL, "bad-read-accountdb");
@@ -220,51 +219,32 @@ bool CLuaContractInvokeTx::ExecuteTx(int32_t height, int32_t index, CCacheWrappe
         return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, read script failed, regId=%s",
                         app_uid.get<CRegID>().ToString()), READ_ACCOUNT_FAIL, "bad-read-script");
 
-    CVmRunEnv vmRunEnv;
-    std::shared_ptr<CBaseTx> pTx = GetNewInstance();
-    uint64_t fuelRate = GetFuelRate(cw.contractCache);
+    CLuaVMRunEnv vmRunEnv;
+
+    CLuaVMContext context;
+    context.p_cw = &cw;
+    context.height = height;
+    context.p_base_tx = this;
+    context.fuel_limit = fuelLimit;
+    context.transfer_symbol = SYMB::WICC;
+    context.transfer_amount = coin_amount;
+    context.p_tx_user_account = &srcAccount;
+    context.p_app_account = &desAccount;
+    context.p_contract = &contract;
+    context.p_arguments = &arguments;
 
     int64_t llTime = GetTimeMillis();
-    tuple<bool, uint64_t, string> ret = vmRunEnv.ExecuteContract(pTx, height, cw, fuelRate, nRunStep);
-    if (!std::get<0>(ret))
+    auto pExecErr = vmRunEnv.ExecuteContract(&context, nRunStep);
+    if (pExecErr)
         return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, txid=%s run script error:%s",
-                        GetHash().GetHex(), std::get<2>(ret)), UPDATE_ACCOUNT_FAIL, "run-script-error: " + std::get<2>(ret));
+                        GetHash().GetHex(), *pExecErr), UPDATE_ACCOUNT_FAIL, "run-script-error: " + *pExecErr);
 
     LogPrint("vm", "execute contract elapse: %lld, txid=%s\n", GetTimeMillis() - llTime, GetHash().GetHex());
 
-    set<CKeyID> vAddress;
-    CUserID userId;
-    vector<std::shared_ptr<CAccount> > &vAccount = vmRunEnv.GetNewAccount();
-    // Update accounts' info referred to the contract
-    for (auto &itemAccount : vAccount) {
-        vAddress.insert(itemAccount->keyid);
-        userId = itemAccount->keyid;
-        CAccount oldAcct;
-        if (!cw.accountCache.GetAccount(userId, oldAcct)) {
-            // The contract transfers money to an address for the first time.
-            if (!itemAccount->keyid.IsNull()) {
-                oldAcct.keyid = itemAccount->keyid;
-            } else {
-                return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, read account info error"),
-                                 UPDATE_ACCOUNT_FAIL, "bad-read-accountdb");
-            }
-        }
-        if (!cw.accountCache.SetAccount(userId, *itemAccount))
-            return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, write account info error"),
-                             UPDATE_ACCOUNT_FAIL, "bad-write-accountdb");
-    }
-
-    vector<std::shared_ptr<CAppUserAccount> > &vAppUserAccount = vmRunEnv.GetRawAppUserAccount();
-    for (auto & itemUserAccount : vAppUserAccount) {
-        CKeyID itemKeyID;
-        bool bValid = GetKeyId(cw.accountCache, itemUserAccount.get()->GetAccUserId(), itemKeyID);
-        if (bValid) {
-            vAddress.insert(itemKeyID);
-        }
-    }
-
-    if (!cw.contractCache.SetTxRelAccout(GetHash(), vAddress))
-        return ERRORMSG("CLuaContractInvokeTx::ExecuteTx, save tx relate account info to script db error");
+    if (!cw.txReceiptCache.SetTxReceipts(GetHash(), vmRunEnv.GetReceipts()))
+        return state.DoS(
+            100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, set tx receipts failed!! txid=%s", GetHash().ToString()),
+            REJECT_INVALID, "set-tx-receipt-failed");
 
     return true;
 }
@@ -272,7 +252,7 @@ bool CLuaContractInvokeTx::ExecuteTx(int32_t height, int32_t index, CCacheWrappe
 string CLuaContractInvokeTx::ToString(CAccountDBCache &accountCache) {
     return strprintf(
         "txType=%s, hash=%s, ver=%d, txUid=%s, app_uid=%s, coin_amount=%llu, llFees=%llu, arguments=%s, "
-        "valid_height=%d\n",
+        "valid_height=%d",
         GetTxType(nTxType), GetHash().ToString(), nVersion, txUid.ToString(), app_uid.ToString(), coin_amount, llFees,
         HexStr(arguments), valid_height);
 }
@@ -295,6 +275,7 @@ Object CLuaContractInvokeTx::ToJson(const CAccountDBCache &accountCache) const {
 // class CUniversalContractDeployTx
 
 bool CUniversalContractDeployTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
+    IMPLEMENT_DISABLE_TX_PRE_STABLE_COIN_RELEASE;
     IMPLEMENT_CHECK_TX_FEE;
     IMPLEMENT_CHECK_TX_REGID(txUid.type());
 
@@ -309,16 +290,17 @@ bool CUniversalContractDeployTx::CheckTx(int32_t height, CCacheWrapper &cw, CVal
                         llFees, llFuel), REJECT_INVALID, "fee-too-litter-to-afford-fuel");
     }
 
-    // If valid height range changed little enough(i.e. 3 blocks), remove it.
     if (GetFeatureForkVersion(height) == MAJOR_VER_R2) {
-        uint64_t slideWindowBlockCount = 0;
-        cw.sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindowBlockCount);
-        uint64_t coinMedianPrice =
-            fee_symbol == SYMB::WUSD
-                ? 10000  // boosted by 10^4
-                : cw.ppCache.GetMedianPrice(height, slideWindowBlockCount, CoinPricePair(fee_symbol, SYMB::USD));
+        uint64_t slideWindow = 0;
+        cw.sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
+
+        uint64_t feeMedianPrice = 10000;  // boosted by 10^4
+        if (fee_symbol != SYMB::WUSD) {
+            cw.ppCache.GetMedianPrice(height, slideWindow, CoinPricePair(fee_symbol, SYMB::USD));
+        }
+
         int32_t txSize   = ::GetSerializeSize(GetNewInstance(), SER_NETWORK, PROTOCOL_VERSION);
-        double dFeePerKb = double(coinMedianPrice) / kPercentBoost * (llFees - llFuel) / (txSize / 1000.0);
+        double dFeePerKb = double(feeMedianPrice) / kPercentBoost * (llFees - llFuel) / (txSize / 1000.0);
         if (dFeePerKb != 0 && dFeePerKb < CBaseTx::nMinRelayTxFee) {
             return state.DoS(100, ERRORMSG("CUniversalContractDeployTx::CheckTx, fee too litter in fee/kb: %.4f < %lld",
                             dFeePerKb, CBaseTx::nMinRelayTxFee), REJECT_INVALID, "fee-too-litter-in-fee/kb");
@@ -388,7 +370,7 @@ string CUniversalContractDeployTx::ToString(CAccountDBCache &accountCache) {
     CKeyID keyId;
     accountCache.GetKeyId(txUid, keyId);
 
-    return strprintf("txType=%s, hash=%s, ver=%d, txUid=%s, addr=%s, fee_symbol=%s, llFees=%llu, valid_height=%d\n",
+    return strprintf("txType=%s, hash=%s, ver=%d, txUid=%s, addr=%s, fee_symbol=%s, llFees=%llu, valid_height=%d",
                      GetTxType(nTxType), GetHash().ToString(), nVersion, txUid.ToString(), keyId.ToAddress(),
                      fee_symbol, llFees, valid_height);
 }
@@ -409,6 +391,7 @@ Object CUniversalContractDeployTx::ToJson(const CAccountDBCache &accountCache) c
 // class CUniversalContractInvokeTx
 
 bool CUniversalContractInvokeTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
+    IMPLEMENT_DISABLE_TX_PRE_STABLE_COIN_RELEASE;
     IMPLEMENT_CHECK_TX_FEE;
     IMPLEMENT_CHECK_TX_ARGUMENTS;
     IMPLEMENT_CHECK_TX_REGID_OR_PUBKEY(txUid.type());
@@ -423,10 +406,6 @@ bool CUniversalContractInvokeTx::CheckTx(int32_t height, CCacheWrapper &cw, CVal
         return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::CheckTx, read account failed, regId=%s",
                         txUid.get<CRegID>().ToString()), REJECT_INVALID, "bad-getaccount");
 
-    if (!srcAccount.HaveOwnerPubKey())
-        return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::CheckTx, account unregistered"),
-                        REJECT_INVALID, "bad-account-unregistered");
-
     CUniversalContract contract;
     if (!cw.contractCache.GetContract(app_uid.get<CRegID>(), contract))
         return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::CheckTx, read script failed, regId=%s",
@@ -439,9 +418,13 @@ bool CUniversalContractInvokeTx::CheckTx(int32_t height, CCacheWrapper &cw, CVal
 }
 
 bool CUniversalContractInvokeTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state) {
-    CAccount srcAccount;
-    CAccount desAccount;
 
+    uint64_t fuelLimit;
+    if (!GetFuelLimit(*this, height, cw, state, fuelLimit)) return false;
+
+    vector<CReceipt> receipts;
+
+    CAccount srcAccount;
     if (!cw.accountCache.GetAccount(txUid, srcAccount)) {
         return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::ExecuteTx, read source addr account info error"),
                          READ_ACCOUNT_FAIL, "bad-read-accountdb");
@@ -463,6 +446,7 @@ bool CUniversalContractInvokeTx::ExecuteTx(int32_t height, int32_t index, CCache
         return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::ExecuteTx, save account info error"),
                          WRITE_ACCOUNT_FAIL, "bad-write-accountdb");
 
+    CAccount desAccount;
     if (!cw.accountCache.GetAccount(app_uid, desAccount)) {
         return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::ExecuteTx, get account info failed by regid:%s",
                         app_uid.get<CRegID>().ToString()), READ_ACCOUNT_FAIL, "bad-read-accountdb");
@@ -482,51 +466,48 @@ bool CUniversalContractInvokeTx::ExecuteTx(int32_t height, int32_t index, CCache
         return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::ExecuteTx, read script failed, regId=%s",
                         app_uid.get<CRegID>().ToString()), READ_ACCOUNT_FAIL, "bad-read-script");
 
-    CVmRunEnv vmRunEnv;
-    std::shared_ptr<CBaseTx> pTx = GetNewInstance();
+    CLuaVMRunEnv vmRunEnv;
     uint64_t fuelRate = GetFuelRate(cw.contractCache);
 
+    CLuaVMContext context;
+    context.p_cw = &cw;
+    context.height = height;
+    context.p_base_tx = this;
+    context.fuel_limit = fuelLimit;
+    context.transfer_symbol = coin_symbol;
+    context.transfer_amount = coin_amount;
+    context.p_tx_user_account = &srcAccount;
+    context.p_app_account = &desAccount;
+    context.p_contract = &contract;
+    context.p_arguments = &arguments;
     int64_t llTime = GetTimeMillis();
-    tuple<bool, uint64_t, string> ret = vmRunEnv.ExecuteContract(pTx, height, cw, fuelRate, nRunStep);
-    if (!std::get<0>(ret))
+    auto pExecErr = vmRunEnv.ExecuteContract(&context, nRunStep);
+    if (pExecErr)
         return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::ExecuteTx, txid=%s run script error:%s",
-            GetHash().GetHex(), std::get<2>(ret)), UPDATE_ACCOUNT_FAIL, "run-script-error: " + std::get<2>(ret));
+            GetHash().GetHex(), *pExecErr), UPDATE_ACCOUNT_FAIL, "run-script-error: " + *pExecErr);
+
+    receipts.insert(receipts.end(), vmRunEnv.GetReceipts().begin(), vmRunEnv.GetReceipts().end());
 
     LogPrint("vm", "execute contract elapse: %lld, txid=%s\n", GetTimeMillis() - llTime, GetHash().GetHex());
 
-    set<CKeyID> vAddress;
-    CUserID userId;
-    vector<std::shared_ptr<CAccount> > &vAccount = vmRunEnv.GetNewAccount();
-    // Update accounts' info referred to the contract
-    for (auto &itemAccount : vAccount) {
-        vAddress.insert(itemAccount->keyid);
-        userId = itemAccount->keyid;
-        CAccount oldAcct;
-        if (!cw.accountCache.GetAccount(userId, oldAcct)) {
-            // The contract transfers money to an address for the first time.
-            if (!itemAccount->keyid.IsNull()) {
-                oldAcct.keyid = itemAccount->keyid;
-            } else {
-                return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::ExecuteTx, read account info error"),
-                                 UPDATE_ACCOUNT_FAIL, "bad-read-accountdb");
-            }
+    // If fees paid by WUSD, send the fuel to risk reserve pool.
+    if (fee_symbol == SYMB::WUSD) {
+        uint64_t fuel = GetFuel(fuelRate);
+        CAccount fcoinGenesisAccount;
+        cw.accountCache.GetFcoinGenesisAccount(fcoinGenesisAccount);
+
+        if (!fcoinGenesisAccount.OperateBalance(SYMB::WUSD, BalanceOpType::ADD_FREE, fuel)) {
+            return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::ExecuteTx, operate balance failed"),
+                             UPDATE_ACCOUNT_FAIL, "operate-scoins-genesis-account-failed");
         }
-        if (!cw.accountCache.SetAccount(userId, *itemAccount))
-            return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::ExecuteTx, write account info error"),
-                UPDATE_ACCOUNT_FAIL, "bad-write-accountdb");
+
+        CUserID fcoinGenesisUid(fcoinGenesisAccount.regid);
+        receipts.emplace_back(nullId, fcoinGenesisUid, SYMB::WUSD, fuel, "send fuel into risk riserve");
     }
 
-    vector<std::shared_ptr<CAppUserAccount> > &vAppUserAccount = vmRunEnv.GetRawAppUserAccount();
-    for (auto & itemUserAccount : vAppUserAccount) {
-        CKeyID itemKeyID;
-        bool bValid = GetKeyId(cw.accountCache, itemUserAccount.get()->GetAccUserId(), itemKeyID);
-        if (bValid) {
-            vAddress.insert(itemKeyID);
-        }
-    }
-
-    if (!cw.contractCache.SetTxRelAccout(GetHash(), vAddress))
-        return ERRORMSG("CUniversalContractInvokeTx::ExecuteTx, save tx relate account info to script db error");
+    if (!cw.txReceiptCache.SetTxReceipts(GetHash(), receipts))
+        return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::ExecuteTx, set tx receipts failed!! txid=%s",
+                        GetHash().ToString()), REJECT_INVALID, "set-tx-receipt-failed");
 
     return true;
 }
@@ -534,7 +515,7 @@ bool CUniversalContractInvokeTx::ExecuteTx(int32_t height, int32_t index, CCache
 string CUniversalContractInvokeTx::ToString(CAccountDBCache &accountCache) {
     return strprintf(
         "txType=%s, hash=%s, ver=%d, txUid=%s, app_uid=%s, coin_symbol=%s, coin_amount=%llu, fee_symbol=%s, "
-        "llFees=%llu, arguments=%s, valid_height=%d\n",
+        "llFees=%llu, arguments=%s, valid_height=%d",
         GetTxType(nTxType), GetHash().ToString(), nVersion, txUid.ToString(), app_uid.ToString(), coin_symbol,
         coin_amount, fee_symbol, llFees, HexStr(arguments), valid_height);
 }

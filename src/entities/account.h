@@ -109,7 +109,7 @@ public:
     AccountTokenMap tokens;         //!< In total, 3 types of coins/tokens:
                                     //!<    1) system-issued coins: WICC, WGRT
                                     //!<    2) miner-issued stablecoins WUSD|WCNY|...
-                                    //!<    3) user-issued tokens (WRC20 compilant)
+                                    //!<    3) user-issued tokens (WRC20 compliant)
 
     uint64_t received_votes;        //!< votes received
     uint64_t last_vote_height;      //!< account's last vote block height used for computing interest
@@ -164,14 +164,13 @@ public:
     bool OperateBalance(const TokenSymbol &tokenSymbol, const BalanceOpType opType, const uint64_t &value);
 
     bool StakeVoteBcoins(VoteType type, const uint64_t votes);
-    bool ProcessDelegateVotes(const vector<CCandidateVote>& candidateVotesIn,
+    bool ProcessCandidateVotes(const vector<CCandidateVote>& candidateVotesIn,
                               vector<CCandidateReceivedVote>& candidateVotesInOut, const uint32_t currHeight,
                               const CAccountDBCache &accountCache, vector<CReceipt> &receipts);
 
     uint64_t GetVotedBcoins(const vector<CCandidateReceivedVote>& candidateVotes, const uint64_t currHeight);
 
-    uint64_t ComputeVoteStakingInterest(const vector<CCandidateReceivedVote>& candidateVotes, const uint32_t currHeight,
-                                        const FeatureForkVersionEnum& featureForkVersion);
+    uint64_t ComputeVoteStakingInterest(const uint64_t lastVotedBcoins, const uint32_t currHeight);
     uint64_t ComputeBlockInflateInterest(const uint32_t currHeight) const;
 
     bool HaveOwnerPubKey() const { return owner_pubkey.IsFullyValid(); }

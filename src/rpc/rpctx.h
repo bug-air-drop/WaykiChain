@@ -16,10 +16,7 @@ using namespace json_spirit;
 class CBaseTx;
 
 extern Value submitaccountregistertx(const Array& params, bool fHelp);
-
 extern Value submitcontractcalltx(const Array& params, bool fHelp);
-extern Value signcontracttx(const Array& params, bool fHelp);
-extern Value createfreezetx(const Array& params, bool fHelp);
 extern Value submitcontractdeploytx(const Array& params, bool fHelp);
 extern Value submitdelegatevotetx(const Array& params, bool fHelp);
 
@@ -27,7 +24,6 @@ extern Value gettxdetail(const Array& params, bool fHelp);
 extern Value sign(const Array& params, bool fHelp);
 extern Value getaccountinfo(const Array& params, bool fHelp);
 extern Value disconnectblock(const Array& params, bool fHelp);
-extern Value generateblock(const Array& params, bool fHelp);
 extern Value reloadtxcache(const Array& params, bool fHelp);
 
 extern Value getcontractinfo(const Array& params, bool fHelp);
@@ -35,20 +31,16 @@ extern Value getcontractdata(const Array& params, bool fHelp);
 extern Value getcontractaccountinfo(const Array& params, bool fHelp);
 
 extern Value saveblocktofile(const Array& params, bool fHelp);
-extern Value getalltxinfo(const Array& params, bool fHelp);
-
 extern Value gethash(const Array& params, bool fHelp);
 extern Value validateaddr(const Array& params, bool fHelp);
 extern Object TxToJSON(CBaseTx *pTx);
 extern Value gettotalcoins(const Array& params, bool fHelp);
-extern Value gettotalassets(const Array& params, bool fHelp);
 
 extern Value getsignature(const Array& params, bool fHelp);
 
 extern Value listaddr(const Array& params, bool fHelp);
 extern Value listtx(const Array& params, bool fHelp);
 extern Value listcontractassets(const Array& params, bool fHelp);
-extern Value listunconfirmedtx(const Array& params, bool fHelp);
 extern Value listcontracts(const Array& params, bool fHelp);
 extern Value listtxcache(const Array& params, bool fHelp);
 extern Value listdelegates(const Array& params, bool fHelp);

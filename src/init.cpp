@@ -169,11 +169,11 @@ void Shutdown() {
 //
 // Signal handlers are very limited in what they are allowed to do, so:
 //
-void HandleSIGTERM(int) {
+void HandleSIGTERM(int32_t) {
     fRequestShutdown = true;
 }
 
-void HandleSIGHUP(int) {
+void HandleSIGHUP(int32_t) {
     fReopenDebugLog = true;
 }
 
@@ -187,7 +187,7 @@ bool static InitWarning(const string &str) {
     return true;
 }
 
-bool static Bind(const CService &addr, unsigned int flags) {
+bool static Bind(const CService &addr, uint32_t flags) {
     if (!(flags & BF_EXPLICIT) && IsLimited(addr))
         return false;
     string strError;
@@ -263,7 +263,6 @@ string HelpMessage() {
     strUsage += "  -upgradewallet         " + _("Upgrade wallet to latest format") + " " + _("on startup") + "\n";
     strUsage += "  -wallet=<file>         " + _("Specify wallet file (within data directory)") + " " + _("(default: wallet.dat)") + "\n";
     strUsage += "  -walletnotify=<cmd>    " + _("Execute command when a wallet transaction changes (%s in cmd is replaced by TxID)") + "\n";
-    strUsage += "  -zapwallettxes         " + _("Clear list of wallet transactions (diagnostic tool; implies -rescan)") + "\n";
 #endif
 
     strUsage += "\n" + _("Debugging/Testing options:") + "\n";
@@ -302,12 +301,10 @@ string HelpMessage() {
     strUsage += "  -testnet               " + _("Use the test network") + "\n";
 
     strUsage += "\n" + _("Block creation options:") + "\n";
-    strUsage += "  -blockminsize=<n>      " + _("Set minimum block size in bytes (default: 0)") + "\n";
     strUsage += "  -blockmaxsize=<n>      " + strprintf(_("Set maximum block size in bytes (default: %d)"), DEFAULT_BLOCK_MAX_SIZE) + "\n";
-    strUsage += "  -blockprioritysize=<n> " + strprintf(_("Set maximum size of high-priority/low-fee transactions in bytes (default: %d)"), DEFAULT_BLOCK_PRIORITY_SIZE) + "\n";
 
     strUsage += "\n" + _("RPC server options:") + "\n";
-    strUsage += "  -server                " + _("Accept command line and JSON-RPC commands") + "\n";
+    strUsage += "  -rpcserver             " + _("Accept command line and JSON-RPC commands") + "\n";
     strUsage += "  -rpcuser=<user>        " + _("Username for JSON-RPC connections") + "\n";
     strUsage += "  -rpcpassword=<pw>      " + _("Password for JSON-RPC connections") + "\n";
     strUsage += "  -rpcport=<port>        " + _("Listen for JSON-RPC connections on <port> (default: 8332 or testnet: 18332)") + "\n";
@@ -341,14 +338,14 @@ void ThreadImport(vector<boost::filesystem::path> vImportFiles) {
     // -reindex
     if (SysCfg().IsReindex()) {
         CImportingNow imp;
-        int nFile = 0;
+        int32_t nFile = 0;
         while (true) {
             CDiskBlockPos pos(nFile, 0);
             FILE *file = OpenBlockFile(pos, true);
             if (!file)
                 break;
 
-            LogPrint("INFO", "Reindexing block file blk%05u.dat...\n", (unsigned int)nFile);
+            LogPrint("INFO", "Reindexing block file blk%05u.dat...\n", (uint32_t)nFile);
             LoadExternalBlockFile(file, &pos);
             nFile++;
         }
@@ -415,7 +412,7 @@ bool AppInit(boost::thread_group &threadGroup) {
 
     // Initialize Windows Sockets
     WSADATA wsadata;
-    int ret = WSAStartup(MAKEWORD(2, 2), &wsadata);
+    int32_t ret = WSAStartup(MAKEWORD(2, 2), &wsadata);
     if (ret != NO_ERROR || LOBYTE(wsadata.wVersion) != 2 || HIBYTE(wsadata.wVersion) != 2)
         return InitError(strprintf("Error: Winsock library failed to start (WSAStartup returned error %d)", ret));
 
@@ -494,18 +491,11 @@ bool AppInit(boost::thread_group &threadGroup) {
             LogPrint("INFO", "AppInit : parameter interaction: -salvagewallet=1 -> setting -rescan=1\n");
     }
 
-    // -zapwallettx implies a rescan
-    if (SysCfg().GetBoolArg("-zapwallettxes", false)) {
-        if (SysCfg().SoftSetBoolArg("-rescan", true)) {
-            LogPrint("INFO", "AppInit : parameter interaction: -zapwallettxes=1 -> setting -rescan=1\n");
-        }
-    }
-
     // Make sure enough file descriptors are available
-    int nBind       = max((int)SysCfg().IsArgCount("-bind"), 1);
+    int32_t nBind       = max((int32_t)SysCfg().IsArgCount("-bind"), 1);
     nMaxConnections = SysCfg().GetArg("-maxconnections", 125);
-    nMaxConnections = max(min(nMaxConnections, (int)(FD_SETSIZE - nBind - MIN_CORE_FILEDESCRIPTORS)), 0);
-    int nFD         = RaiseFileDescriptorLimit(nMaxConnections + MIN_CORE_FILEDESCRIPTORS);
+    nMaxConnections = max(min(nMaxConnections, (int32_t)(FD_SETSIZE - nBind - MIN_CORE_FILEDESCRIPTORS)), 0);
+    int32_t nFD         = RaiseFileDescriptorLimit(nMaxConnections + MIN_CORE_FILEDESCRIPTORS);
     if (nFD < MIN_CORE_FILEDESCRIPTORS)
         return InitError(_("Not enough file descriptors available."));
 
@@ -593,7 +583,7 @@ bool AppInit(boost::thread_group &threadGroup) {
 
     RegisterNodeSignals(GetNodeSignals());
 
-    int nSocksVersion = SysCfg().GetArg("-socks", 5);
+    int32_t nSocksVersion = SysCfg().GetArg("-socks", 5);
     if (nSocksVersion != 4 && nSocksVersion != 5) {
         return InitError(strprintf(_("Unknown -socks proxy version requested: %i"), nSocksVersion));
     }
@@ -608,7 +598,7 @@ bool AppInit(boost::thread_group &threadGroup) {
             }
             nets.insert(net);
         }
-        for (int n = 0; n < NET_MAX; n++) {
+        for (int32_t n = 0; n < NET_MAX; n++) {
             enum Network net = (enum Network)n;
             if (!nets.count(net)) {
                 SetLimited(net);
@@ -820,7 +810,7 @@ bool AppInit(boost::thread_group &threadGroup) {
 
     if (SysCfg().IsArgCount("-printblock")) {
         string strMatch = SysCfg().GetArg("-printblock", "");
-        int nFound      = 0;
+        int32_t nFound      = 0;
         for (map<uint256, CBlockIndex *>::iterator mi = mapBlockIndex.begin(); mi != mapBlockIndex.end(); ++mi) {
             uint256 hash = (*mi).first;
             if (strncmp(hash.ToString().c_str(), strMatch.c_str(), strMatch.size()) == 0) {
@@ -846,8 +836,8 @@ bool AppInit(boost::thread_group &threadGroup) {
 
     nStart                   = GetTimeMillis();
     CBlockIndex *pBlockIndex = chainActive.Tip();
-    int nCacheHeight         = SysCfg().GetTxCacheHeight();
-    int nCount               = 0;
+    int32_t nCacheHeight         = SysCfg().GetTxCacheHeight();
+    int32_t nCount               = 0;
     CBlock block;
     while (pBlockIndex && nCacheHeight-- > 0) {
         if (!ReadBlockFromDisk(pBlockIndex, block))
